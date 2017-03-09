@@ -20,3 +20,13 @@ $(PKGS): golang-test-all-deps
 
 vendor: golang-godep-vendor-deps
 	$(call golang-godep-vendor,$(PKGS))
+
+GLIDE_VERSION = v0.12.3
+$(GOPATH)/src/github.com/Masterminds/glide:
+	git clone -b $(GLIDE_VERSION) https://github.com/Masterminds/glide.git $(GOPATH)/src/github.com/Masterminds/glide
+
+$(GOPATH)/bin/glide: $(GOPATH)/src/github.com/Masterminds/glide
+	@go build -o $(GOPATH)/bin/glide github.com/Masterminds/glide
+
+install_deps: $(GOPATH)/bin/glide
+	@$(GOPATH)/bin/glide install -v
