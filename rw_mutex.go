@@ -78,10 +78,8 @@ func (m *RWMutex) Unlock() error {
 	})
 	if err == mgo.ErrNotFound {
 		return fmt.Errorf("lock %s not currently held by client: %s", m.lockID, m.clientID)
-	} else if err != nil {
-		return err
 	}
-	return nil
+	return err
 }
 
 // RLock acquires the write lock
@@ -107,15 +105,14 @@ func (m *RWMutex) RLock() error {
 				"readers": m.clientID,
 			},
 		})
-		// This only works if the mgo.Session object has Safe mode enabled. Safe is the default but
-		// something for which we should maintain external documentation
-		if err == mgo.ErrNotFound {
-			time.Sleep(m.SleepTime)
-			continue
-		} else if err != nil {
+		if err == nil {
+			return nil
+		} else if err != mgo.ErrNotFound {
+			// This only works if the mgo.Session object has Safe mode enabled. Safe is the default but
+			// something for which we should maintain external documentation
 			return err
 		}
-		return nil
+		time.Sleep(m.SleepTime)
 	}
 }
 
@@ -131,10 +128,8 @@ func (m *RWMutex) RUnlock() error {
 	})
 	if err == mgo.ErrNotFound {
 		return fmt.Errorf("lock %s not currently held by client: %s", m.lockID, m.clientID)
-	} else if err != nil {
-		return err
 	}
-	return nil
+	return err
 }
 
 func (m *RWMutex) findOrCreateLock() (*mongoLock, error) {
