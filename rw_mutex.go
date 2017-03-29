@@ -2,6 +2,7 @@ package lock
 
 import (
 	"fmt"
+	"math/rand"
 	"time"
 
 	"gopkg.in/mgo.v2"
@@ -62,7 +63,8 @@ func (m *RWMutex) Lock() error {
 			// but something for which we should maintain external documentation
 			return err
 		}
-		time.Sleep(m.SleepTime)
+		jitter := time.Duration(rand.Int63n(1000)) * time.Millisecond
+		time.Sleep(m.SleepTime + jitter)
 	}
 }
 
@@ -112,7 +114,8 @@ func (m *RWMutex) RLock() error {
 			// something for which we should maintain external documentation
 			return err
 		}
-		time.Sleep(m.SleepTime)
+		jitter := time.Duration(rand.Int63n(1000)) * time.Millisecond
+		time.Sleep(m.SleepTime + jitter)
 	}
 }
 

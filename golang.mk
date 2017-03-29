@@ -87,7 +87,7 @@ golang-test-deps:
 # arg1: pkg path
 define golang-test
 @echo "TESTING $(1)..."
-@go test -timeout 1s -v $(1)
+@go test -timeout 2s -v $(1)
 endef
 
 # golang-test-strict-deps is here for consistency
