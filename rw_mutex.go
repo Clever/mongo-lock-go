@@ -19,9 +19,10 @@ type RWMutex struct {
 
 // mongoLock is the resource stored in mongo to represent the lock
 type mongoLock struct {
-	LockID  string   `bson:"lockID"`
-	Writer  string   `bson:"writer"`
-	Readers []string `bson:"readers"`
+	LockID      string    `bson:"lockID"`
+	Writer      string    `bson:"writer"`
+	Readers     []string  `bson:"readers"`
+	LastUpdated time.Time `bson:"lastUpdated"`
 }
 
 // NewRWMutex returns a new RWMutex
@@ -53,7 +54,8 @@ func (m *RWMutex) Lock() error {
 			"writer":  "",
 		}, bson.M{
 			"$set": bson.M{
-				"writer": m.clientID,
+				"writer":      m.clientID,
+				"lastUpdated": time.Now(),
 			},
 		})
 		if err == nil {
@@ -75,7 +77,8 @@ func (m *RWMutex) Unlock() error {
 		"writer": m.clientID,
 	}, bson.M{
 		"$set": bson.M{
-			"writer": "",
+			"writer":      "",
+			"lastUpdated": time.Now(),
 		},
 	})
 	if err == mgo.ErrNotFound {
@@ -104,7 +107,8 @@ func (m *RWMutex) RLock() error {
 			"writer": "",
 		}, bson.M{
 			"$addToSet": bson.M{
-				"readers": m.clientID,
+				"readers":     m.clientID,
+				"lastUpdated": time.Now(),
 			},
 		})
 		if err == nil {
@@ -126,7 +130,8 @@ func (m *RWMutex) RUnlock() error {
 		"readers": m.clientID,
 	}, bson.M{
 		"$pull": bson.M{
-			"readers": m.clientID,
+			"readers":     m.clientID,
+			"lastUpdated": time.Now(),
 		},
 	})
 	if err == mgo.ErrNotFound {
@@ -143,7 +148,8 @@ func (m *RWMutex) findOrCreateLock() (*mongoLock, error) {
 	if err == mgo.ErrNotFound {
 		// If the lock doesn't exist, we should create it
 		err := m.collection.Insert(&mongoLock{
-			LockID: m.lockID,
+			LockID:      m.lockID,
+			LastUpdated: time.Now(),
 		})
 		if mgo.IsDup(err) {
 			// Someone else has already inserted the lock
