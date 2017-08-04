@@ -107,7 +107,9 @@ func (m *RWMutex) RLock() error {
 			"writer": "",
 		}, bson.M{
 			"$addToSet": bson.M{
-				"readers":     m.clientID,
+				"readers": m.clientID,
+			},
+			"$set": bson.M{
 				"lastUpdated": time.Now(),
 			},
 		})
@@ -130,7 +132,9 @@ func (m *RWMutex) RUnlock() error {
 		"readers": m.clientID,
 	}, bson.M{
 		"$pull": bson.M{
-			"readers":     m.clientID,
+			"readers": m.clientID,
+		},
+		"$set": bson.M{
 			"lastUpdated": time.Now(),
 		},
 	})
