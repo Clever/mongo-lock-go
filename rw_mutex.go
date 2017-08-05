@@ -144,6 +144,21 @@ func (m *RWMutex) RUnlock() error {
 	return err
 }
 
+// Ping updates the lastUpdated field of the lock
+func (m *RWMutex) Ping() error {
+	err := m.collection.Update(bson.M{
+		"lockID": m.lockID,
+	}, bson.M{
+		"$set": bson.M{
+			"lastUpdated": time.Now(),
+		},
+	})
+	if err == mgo.ErrNotFound {
+		return fmt.Errorf("cannot ping lock %s, does not exist!", m.lockID)
+	}
+	return err
+}
+
 func (m *RWMutex) findOrCreateLock() (*mongoLock, error) {
 	var lock mongoLock
 	err := m.collection.Find(bson.M{
