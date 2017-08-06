@@ -9,6 +9,10 @@ import (
 	"gopkg.in/mgo.v2/bson"
 )
 
+var (
+	ttlUpdateThreshold = -30 * time.Second
+)
+
 // RWMutex implements a reader/writer lock. The interfaces matches that of sync.RWMutex
 type RWMutex struct {
 	collection *mgo.Collection
@@ -161,22 +165,24 @@ func (m *RWMutex) Ping() error {
 
 func (m *RWMutex) findOrCreateLock() (*mongoLock, error) {
 	var lock mongoLock
+	lastUpdatedThreshold := time.Now().Add(ttlUpdateThreshold)
 	err := m.collection.Find(bson.M{
 		"lockID": m.lockID,
+		"lastUpdated": bson.M{
+			"$gte": lastUpdatedThreshold,
+		},
 	}).One(&lock)
 	if err == mgo.ErrNotFound {
 		// If the lock doesn't exist, we should create it
-		err := m.collection.Insert(&mongoLock{
+		lock = &mongoLock{
 			LockID:      m.lockID,
 			LastUpdated: time.Now(),
-		})
-		if mgo.IsDup(err) {
-			// Someone else has already inserted the lock
-			err := m.collection.Find(bson.M{
-				"lockID": m.lockID,
-			}).One(&lock)
-			return &lock, err
-		} else if err != nil {
+		}
+		_, err := m.collection.Upsert(
+			bson.M{"lockID": m.LockId},
+			lock,
+		)
+		if err != nil {
 			return nil, err
 		}
 	} else if err != nil {
