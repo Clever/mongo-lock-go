@@ -151,6 +151,11 @@ func (m *RWMutex) RUnlock() error {
 	return err
 }
 
+// staleLockThresholdTime returns the time.Time object representing the stale lock threshold
+func (m *RWMutex) staleLockThresholdTime() *time.Time {
+	return time.Now().Add(staleLockDuration)
+}
+
 // Ping updates the lastUpdated field of the lock
 func (m *RWMutex) Ping() error {
 	pingTime = time.Now()
@@ -170,10 +175,6 @@ func (m *RWMutex) Ping() error {
 		m.lastPing = pingTime
 	}
 	return err
-}
-
-func (m *RWMutex) staleLockThresholdTime() *time.Time {
-	return time.Now().Add(staleLockDuration)
 }
 
 func (m *RWMutex) findOrCreateLock() (*mongoLock, error) {
@@ -196,10 +197,8 @@ func (m *RWMutex) findOrCreateLock() (*mongoLock, error) {
 			},
 			lock,
 		)
-		if err != nil {
-			return nil, err
-		}
-	} else if err != nil {
+	}
+	if err != nil {
 		return nil, err
 	}
 	return &lock, nil
