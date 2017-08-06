@@ -178,7 +178,6 @@ func (m *RWMutex) staleLockThresholdTime() *time.Time {
 
 func (m *RWMutex) findOrCreateLock() (*mongoLock, error) {
 	var lock mongoLock
-	lastUpdatedThreshold := time.Now().Add(ttlUpdateThreshold)
 	err := m.collection.Find(bson.M{
 		"lockID": m.lockID,
 		"lastUpdated": bson.M{
