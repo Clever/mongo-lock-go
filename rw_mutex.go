@@ -9,19 +9,27 @@ import (
 	"gopkg.in/mgo.v2/bson"
 )
 
+var (
+	pingLockSeconds   = 5
+	staleLockPings    = 5
+	staleLockDuration = time.Duration(-pingLockSeconds*staleLockPings) * time.Second
+)
+
 // RWMutex implements a reader/writer lock. The interfaces matches that of sync.RWMutex
 type RWMutex struct {
 	collection *mgo.Collection
 	lockID     string
 	clientID   string
 	SleepTime  time.Duration
+	lastPing   time.Time
 }
 
 // mongoLock is the resource stored in mongo to represent the lock
 type mongoLock struct {
-	LockID  string   `bson:"lockID"`
-	Writer  string   `bson:"writer"`
-	Readers []string `bson:"readers"`
+	LockID      string    `bson:"lockID"`
+	Writer      string    `bson:"writer"`
+	Readers     []string  `bson:"readers"`
+	LastUpdated time.Time `bson:"lastUpdated"`
 }
 
 // NewRWMutex returns a new RWMutex
@@ -53,7 +61,8 @@ func (m *RWMutex) Lock() error {
 			"writer":  "",
 		}, bson.M{
 			"$set": bson.M{
-				"writer": m.clientID,
+				"writer":      m.clientID,
+				"lastUpdated": time.Now(),
 			},
 		})
 		if err == nil {
@@ -75,7 +84,8 @@ func (m *RWMutex) Unlock() error {
 		"writer": m.clientID,
 	}, bson.M{
 		"$set": bson.M{
-			"writer": "",
+			"writer":      "",
+			"lastUpdated": time.Now(),
 		},
 	})
 	if err == mgo.ErrNotFound {
@@ -106,6 +116,9 @@ func (m *RWMutex) RLock() error {
 			"$addToSet": bson.M{
 				"readers": m.clientID,
 			},
+			"$set": bson.M{
+				"lastUpdated": time.Now(),
+			},
 		})
 		if err == nil {
 			return nil
@@ -128,9 +141,38 @@ func (m *RWMutex) RUnlock() error {
 		"$pull": bson.M{
 			"readers": m.clientID,
 		},
+		"$set": bson.M{
+			"lastUpdated": time.Now(),
+		},
 	})
 	if err == mgo.ErrNotFound {
 		return fmt.Errorf("lock %s not currently held by client: %s", m.lockID, m.clientID)
+	}
+	return err
+}
+
+// staleLockThresholdTime returns the time.Time object representing the stale lock threshold
+func (m *RWMutex) staleLockThresholdTime() *time.Time {
+	return time.Now().Add(staleLockDuration)
+}
+
+// Ping updates the lastUpdated field of the lock
+func (m *RWMutex) Ping() error {
+	pingTime = time.Now()
+	err := m.collection.Update(bson.M{
+		"lockID": m.lockID,
+		"lastUpdated": bson.M{
+			"$gte": m.staleLockThresholdTime(),
+		},
+	}, bson.M{
+		"$set": bson.M{
+			"lastUpdated": pingTime,
+		},
+	})
+	if err == mgo.ErrNotFound {
+		return fmt.Errorf("cannot ping lock %s, does not exist!", m.lockID)
+	} else if err == nil {
+		m.lastPing = pingTime
 	}
 	return err
 }
@@ -139,22 +181,24 @@ func (m *RWMutex) findOrCreateLock() (*mongoLock, error) {
 	var lock mongoLock
 	err := m.collection.Find(bson.M{
 		"lockID": m.lockID,
+		"lastUpdated": bson.M{
+			"$gte": m.staleLockThresholdTime(),
+		},
 	}).One(&lock)
 	if err == mgo.ErrNotFound {
-		// If the lock doesn't exist, we should create it
-		err := m.collection.Insert(&mongoLock{
-			LockID: m.lockID,
-		})
-		if mgo.IsDup(err) {
-			// Someone else has already inserted the lock
-			err := m.collection.Find(bson.M{
-				"lockID": m.lockID,
-			}).One(&lock)
-			return &lock, err
-		} else if err != nil {
-			return nil, err
+		// If the lock doesn't exist, we should create it with an upsert
+		lock = &mongoLock{
+			LockID:      m.lockID,
+			LastUpdated: time.Now(),
 		}
-	} else if err != nil {
+		_, err := m.collection.Upsert(
+			bson.M{
+				"lockID": m.lockID,
+			},
+			lock,
+		)
+	}
+	if err != nil {
 		return nil, err
 	}
 	return &lock, nil
