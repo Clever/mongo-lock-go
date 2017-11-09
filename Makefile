@@ -8,7 +8,7 @@ EXECUTABLE = $(shell basename $(PKG))
 
 .PHONY: test $(PKGS) run clean vendor
 
-$(eval $(call golang-version-check,1.8))
+$(eval $(call golang-version-check,1.9))
 
 test: $(PKGS)
 
@@ -18,8 +18,6 @@ build:
 $(PKGS): golang-test-all-deps
 	$(call golang-test-all,$@)
 
-vendor: golang-godep-vendor-deps
-	$(call golang-godep-vendor,$(PKGS))
 
 GLIDE_VERSION = v0.12.3
 $(GOPATH)/src/github.com/Masterminds/glide:
@@ -28,5 +26,7 @@ $(GOPATH)/src/github.com/Masterminds/glide:
 $(GOPATH)/bin/glide: $(GOPATH)/src/github.com/Masterminds/glide
 	@go build -o $(GOPATH)/bin/glide github.com/Masterminds/glide
 
-install_deps: $(GOPATH)/bin/glide
-	@$(GOPATH)/bin/glide install -v
+
+
+install_deps: golang-dep-vendor-deps
+	$(call golang-dep-vendor)
