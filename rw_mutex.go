@@ -1,6 +1,7 @@
 package lock
 
 import (
+	"errors"
 	"fmt"
 	"math/rand"
 	"time"
@@ -8,6 +9,8 @@ import (
 	"gopkg.in/mgo.v2"
 	"gopkg.in/mgo.v2/bson"
 )
+
+var ErrNotOwner = errors.New("client does not hold lock")
 
 // RWMutex implements a reader/writer lock. The interfaces matches that of sync.RWMutex
 type RWMutex struct {
@@ -130,7 +133,7 @@ func (m *RWMutex) RUnlock() error {
 		},
 	})
 	if err == mgo.ErrNotFound {
-		return fmt.Errorf("lock %s not currently held by client: %s", m.lockID, m.clientID)
+		return ErrNotOwner
 	}
 	return err
 }
