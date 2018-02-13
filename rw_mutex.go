@@ -2,7 +2,6 @@ package lock
 
 import (
 	"errors"
-	"fmt"
 	"math/rand"
 	"time"
 
@@ -82,12 +81,12 @@ func (m *RWMutex) Unlock() error {
 		},
 	})
 	if err == mgo.ErrNotFound {
-		return fmt.Errorf("lock %s not currently held by client: %s", m.lockID, m.clientID)
+		return ErrNotOwner
 	}
 	return err
 }
 
-// RLock acquires the write lock
+// RLock acquires the read lock
 func (m *RWMutex) RLock() error {
 	lock, err := m.findOrCreateLock()
 	if err != nil {
@@ -122,7 +121,7 @@ func (m *RWMutex) RLock() error {
 	}
 }
 
-// RUnlock releases the write lock
+// RUnlock releases the read lock
 func (m *RWMutex) RUnlock() error {
 	err := m.collection.Update(bson.M{
 		"lockID":  m.lockID,
