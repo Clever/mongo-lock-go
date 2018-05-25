@@ -8,7 +8,7 @@ EXECUTABLE = $(shell basename $(PKG))
 
 .PHONY: test $(PKGS) run clean vendor
 
-$(eval $(call golang-version-check,1.9))
+$(eval $(call golang-version-check,1.10))
 
 test: $(PKGS)
 
