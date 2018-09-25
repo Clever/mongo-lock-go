@@ -96,13 +96,6 @@ func (m *RWMutex) RLock() error {
 		return err
 	}
 
-	for _, reader := range lock.Readers {
-		// if this clientID already has a read lock, re-enter the lock and return
-		if reader == m.clientID {
-			return nil
-		}
-	}
-
 	for {
 		err := m.tryToGetReadLock(lock)
 		if err == ErrNotOwner {
