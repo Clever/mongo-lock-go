@@ -114,8 +114,8 @@ func (m *RWMutex) RLock() error {
 	}
 }
 
-// TryReadLock tries to acquires the read lock
-func (m *RWMutex) TryReadLock() error {
+// TryRLock tries to acquires the read lock
+func (m *RWMutex) TryRLock() error {
 	lock, err := m.findOrCreateLock()
 	if err != nil {
 		return err
@@ -124,7 +124,11 @@ func (m *RWMutex) TryReadLock() error {
 	return m.tryToGetReadLock(lock)
 }
 
-// TryReadLock tries to acquires the read lock
+// tryToGetReadLock makes an attempt to acquire a read lock given an existing lock.
+// It will return:
+// - `nil` if the lock is acquired.
+// - ErrNotOwner if a writer has acquired the lock
+// - a non-nil error in a failure case
 func (m *RWMutex) tryToGetReadLock(lock *mongoLock) error {
 	for _, reader := range lock.Readers {
 		// if this clientID already has a read lock, re-enter the lock and return
