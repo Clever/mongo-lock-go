@@ -9,7 +9,10 @@ import (
 	"gopkg.in/mgo.v2/bson"
 )
 
-var ErrNotOwner = errors.New("client does not hold lock")
+var (
+	// ErrNotOwner is returnedd when an unlocking client did not hold the lock
+	ErrNotOwner = errors.New("client does not hold lock")
+)
 
 // RWMutex implements a reader/writer lock. The interfaces matches that of sync.RWMutex
 type RWMutex struct {
@@ -93,6 +96,33 @@ func (m *RWMutex) RLock() error {
 		return err
 	}
 
+	for {
+		err := m.tryToGetReadLock(lock)
+		if err == ErrNotOwner {
+			jitter := time.Duration(rand.Int63n(1000)) * time.Millisecond
+			time.Sleep(m.SleepTime + jitter)
+			continue
+		}
+		return err
+	}
+}
+
+// TryRLock tries to acquires the read lock
+func (m *RWMutex) TryRLock() error {
+	lock, err := m.findOrCreateLock()
+	if err != nil {
+		return err
+	}
+
+	return m.tryToGetReadLock(lock)
+}
+
+// tryToGetReadLock makes an attempt to acquire a read lock given an existing lock.
+// It will return:
+// - `nil` if the lock is acquired.
+// - ErrNotOwner if a writer has acquired the lock
+// - a non-nil error in a failure case
+func (m *RWMutex) tryToGetReadLock(lock *mongoLock) error {
 	for _, reader := range lock.Readers {
 		// if this clientID already has a read lock, re-enter the lock and return
 		if reader == m.clientID {
@@ -100,25 +130,23 @@ func (m *RWMutex) RLock() error {
 		}
 	}
 
-	for {
-		err := m.collection.Update(bson.M{
-			"lockID": m.lockID,
-			"writer": "",
-		}, bson.M{
-			"$addToSet": bson.M{
-				"readers": m.clientID,
-			},
-		})
-		if err == nil {
-			return nil
-		} else if err != mgo.ErrNotFound {
-			// This only works if the mgo.Session object has Safe mode enabled. Safe is the default but
-			// something for which we should maintain external documentation
-			return err
-		}
-		jitter := time.Duration(rand.Int63n(1000)) * time.Millisecond
-		time.Sleep(m.SleepTime + jitter)
+	err := m.collection.Update(bson.M{
+		"lockID": m.lockID,
+		"writer": "",
+	}, bson.M{
+		"$addToSet": bson.M{
+			"readers": m.clientID,
+		},
+	})
+	if err == nil {
+		return nil
+	} else if err != mgo.ErrNotFound {
+		// This only works if the mgo.Session object has Safe mode enabled. Safe is the default but
+		// something for which we should maintain external documentation
+		return err
 	}
+
+	return ErrNotOwner
 }
 
 // RUnlock releases the read lock
@@ -139,9 +167,9 @@ func (m *RWMutex) RUnlock() error {
 
 func (m *RWMutex) findOrCreateLock() (*mongoLock, error) {
 	var lock mongoLock
-	err := m.collection.Find(bson.M{
-		"lockID": m.lockID,
-	}).One(&lock)
+	err := m.collection.
+		Find(bson.M{"lockID": m.lockID}).
+		One(&lock)
 	if err == mgo.ErrNotFound {
 		// If the lock doesn't exist, we should create it
 		err := m.collection.Insert(&mongoLock{
@@ -149,9 +177,9 @@ func (m *RWMutex) findOrCreateLock() (*mongoLock, error) {
 		})
 		if mgo.IsDup(err) {
 			// Someone else has already inserted the lock
-			err := m.collection.Find(bson.M{
-				"lockID": m.lockID,
-			}).One(&lock)
+			err := m.collection.
+				Find(bson.M{"lockID": m.lockID}).
+				One(&lock)
 			return &lock, err
 		} else if err != nil {
 			return nil, err
