@@ -39,6 +39,43 @@ func NewRWMutex(collection *mgo.Collection, lockID, clientID string) *RWMutex {
 	}
 }
 
+func (m *RWMutex) tryToGetWriteLock() error {
+	err := m.collection.Update(bson.M{
+		"lockID":  m.lockID,
+		"readers": []string{},
+		"writer":  "",
+	}, bson.M{
+		"$set": bson.M{
+			"writer": m.clientID,
+		},
+	})
+	if err == nil {
+		return nil // we got the lock!
+	} else if err != mgo.ErrNotFound {
+		// This only works if the mgo.Session object has Safe mode enabled.
+		// Safe is the default but something for which we should maintain
+		// external documentation
+		return err
+	}
+
+	return ErrNotOwner
+}
+
+// TryLock tries to acquire the write lock
+func (m *RWMutex) TryLock() error {
+	lock, err := m.findOrCreateLock()
+	if err != nil {
+		return err
+	}
+
+	// if this clientID already has the lock, re-enter the lock and return
+	if lock.Writer == m.clientID {
+		return nil
+	}
+
+	return m.tryToGetWriteLock()
+}
+
 // Lock acquires the write lock
 func (m *RWMutex) Lock() error {
 	lock, err := m.findOrCreateLock()
@@ -52,24 +89,13 @@ func (m *RWMutex) Lock() error {
 	}
 
 	for {
-		err := m.collection.Update(bson.M{
-			"lockID":  m.lockID,
-			"readers": []string{},
-			"writer":  "",
-		}, bson.M{
-			"$set": bson.M{
-				"writer": m.clientID,
-			},
-		})
-		if err == nil {
-			return nil
-		} else if err != mgo.ErrNotFound {
-			// This only works if the mgo.Session object has Safe mode enabled. Safe is the default
-			// but something for which we should maintain external documentation
-			return err
+		err := m.tryToGetWriteLock()
+		if err == ErrNotOwner {
+			jitter := time.Duration(rand.Int63n(1000)) * time.Millisecond
+			time.Sleep(m.SleepTime + jitter)
+			continue // keep looping
 		}
-		jitter := time.Duration(rand.Int63n(1000)) * time.Millisecond
-		time.Sleep(m.SleepTime + jitter)
+		return err
 	}
 }
 
