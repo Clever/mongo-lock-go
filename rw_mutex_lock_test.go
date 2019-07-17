@@ -12,6 +12,7 @@ import (
 
 const (
 	clientID     = "clientID"
+	clientID2    = "clientID-2"
 	lockID       = "lockID"
 	testMongoURL = "mongodb://127.0.0.1:27017/test"
 )
@@ -161,6 +162,34 @@ func TestLockReenter(t *testing.T) {
 	lock := NewRWMutex(c, lockID, clientID)
 	err = lock.Lock()
 	require.NoError(t, err)
+
+	var mLock mongoLock
+	err = c.Find(bson.M{"lockID": lockID}).One(&mLock)
+	require.NoError(t, err)
+	assert.Equal(t, mongoLock{
+		LockID:  lockID,
+		Writer:  clientID,
+		Readers: []string{},
+	}, mLock)
+}
+
+// TestLockReenter checks that RWMutex.lock reenters a write lock with the same client id
+func TestTryLock(t *testing.T) {
+	c := setupRWMutexTest(t)
+	// Insert the base lock
+	err := c.Insert(&mongoLock{
+		LockID: lockID,
+		Writer: clientID,
+	})
+	require.NoError(t, err)
+
+	// client2 fails
+	lock := NewRWMutex(c, lockID, clientID2)
+	require.Equal(t, lock.TryLock(), ErrNotOwner)
+
+	// client1 succeeds
+	lock = NewRWMutex(c, lockID, clientID)
+	require.NoError(t, lock.TryLock())
 
 	var mLock mongoLock
 	err = c.Find(bson.M{"lockID": lockID}).One(&mLock)
