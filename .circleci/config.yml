@@ -4,7 +4,7 @@ jobs:
     working_directory: /go/src/github.com/Clever/mongo-lock-go
     docker:
     - image: circleci/golang:1.13-stretch
-    - image: circleci/mongo:3.2.20-jessie-ram
+    - image: circleci/mongo:5.0-focal-ram
     environment:
       GOPRIVATE: github.com/Clever/*
       CIRCLE_ARTIFACTS: /tmp/circleci-artifacts
