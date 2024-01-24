@@ -2,7 +2,7 @@ include golang.mk
 .DEFAULT_GOAL := test # override default goal set in library makefile
 
 SHELL := /bin/bash
-PKG := github.com/Clever/mongo-lock-go
+PKG := github.com/Clever/mongo-lock-go/v2
 PKGS := $(shell go list ./... | grep -v /vendor)
 EXECUTABLE = $(shell basename $(PKG))
 
