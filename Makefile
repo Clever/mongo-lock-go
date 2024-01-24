@@ -4,7 +4,7 @@ include golang.mk
 SHELL := /bin/bash
 PKG := github.com/Clever/mongo-lock-go/v2
 PKGS := $(shell go list ./... | grep -v /vendor)
-EXECUTABLE = $(shell basename $(PKG))
+EXECUTABLE := mongo-lock-go 
 
 .PHONY: test $(PKGS) run clean vendor
 
