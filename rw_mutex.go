@@ -64,15 +64,9 @@ func NewRWMutex(collection *mongo.Collection, lockID, clientID string) *RWMutex 
 }
 
 func (m *RWMutex) tryToGetWriteLock() error {
-	// cur, _ := m.collection.Find(context.TODO(), bson.M{}, options.Find())
-	// var data []bson.M
-	// cur.All(context.TODO(), &data)
-	// fmt.Println(data)
-
 	res := m.collection.FindOneAndUpdate(context.TODO(), bson.M{
 		"lockID": m.lockID,
-		// TODO: why doesn't it work when its just []string{}...
-		"$and": []bson.M{emptyReaderQuery, emptyWriterQuery},
+		"$and":   []bson.M{emptyReaderQuery, emptyWriterQuery},
 	}, bson.M{
 		"$set": bson.M{
 			"writer": m.clientID,

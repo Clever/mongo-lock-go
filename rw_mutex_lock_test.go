@@ -85,7 +85,6 @@ func TestLockNewSuccess(t *testing.T) {
 	assert.Equal(t, mongoLock{
 		LockID: lockID,
 		Writer: clientID,
-		// Readers: []string{},
 	}, mLock)
 }
 
@@ -104,7 +103,6 @@ func TestLockWaitsForWriter(t *testing.T) {
 		assert.Equal(t, mongoLock{
 			LockID: lockID,
 			Writer: "client_2",
-			// Readers: []string{},
 		}, mLock)
 	}()
 	// clear the lock after 100 milliseconds
@@ -124,7 +122,6 @@ func TestLockWaitsForWriter(t *testing.T) {
 	assert.Equal(t, mongoLock{
 		LockID: lockID,
 		Writer: clientID,
-		// Readers: []string{},
 	}, mLock)
 }
 
