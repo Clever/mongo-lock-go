@@ -214,6 +214,8 @@ func (m *RWMutex) RUnlock() error {
 	return res.Err()
 }
 
+// findOrCreateLock will attempt to see if an existing lock ID exists
+// if it does not, we will create the lock. afterwards we just return the lock.
 func (m *RWMutex) findOrCreateLock() (*mongoLock, error) {
 	var lock mongoLock
 
