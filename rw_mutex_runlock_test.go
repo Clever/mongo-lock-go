@@ -1,37 +1,37 @@
 package lock
 
-// import (
-// 	"testing"
+import (
+	"testing"
 
-// 	"github.com/stretchr/testify/assert"
-// 	"github.com/stretchr/testify/require"
-// 	"gopkg.in/mgo.v2/bson"
-// )
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/mongo/options"
+)
 
-// // TestUnlockSuccess - RWMutex.Unlock releases the lock correctly
-// func TestUnlockSuccess(t *testing.T) {
-// 	c := setupRWMutexTest(t)
-// 	lock := NewRWMutex(c, lockID, clientID)
-// 	require.NoError(t, lock.Lock())
+// TestUnlockSuccess - RWMutex.Unlock releases the lock correctly
+func TestUnlockSuccess(t *testing.T) {
+	c := setupRWMutexTest(t)
+	lock := NewRWMutex(c.collection, lockID, clientID)
+	require.NoError(t, lock.Lock())
 
-// 	err := lock.Unlock()
-// 	assert.NoError(t, err)
-// 	var mLock mongoLock
-// 	require.NoError(t, c.Find(bson.M{
-// 		"lockID": lockID,
-// 	}).One(&mLock))
-// 	assert.Equal(t, mongoLock{
-// 		LockID:  lockID,
-// 		Readers: []string{},
-// 		Writer:  "",
-// 	}, mLock)
-// }
+	err := lock.Unlock()
+	assert.NoError(t, err)
+	var mLock mongoLock
+	c.FindOne(t, bson.M{
+		"lockID": lockID,
+	}, options.FindOne(), &mLock)
+	assert.Equal(t, mongoLock{
+		LockID: lockID,
+		Writer: "",
+	}, mLock)
+}
 
-// // TestUnlockNotHeld - RWMutex.Unlock returns an error if the client did not hold the lock
-// func TestUnlockNotHeld(t *testing.T) {
-// 	c := setupRWMutexTest(t)
-// 	lock := NewRWMutex(c, lockID, clientID)
+// TestUnlockNotHeld - RWMutex.Unlock returns an error if the client did not hold the lock
+func TestUnlockNotHeld(t *testing.T) {
+	c := setupRWMutexTest(t)
+	lock := NewRWMutex(c.collection, lockID, clientID)
 
-// 	err := lock.Unlock()
-// 	assert.Error(t, err)
-// }
+	err := lock.Unlock()
+	assert.Error(t, err)
+}
