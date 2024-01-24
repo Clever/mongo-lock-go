@@ -1,9 +1,8 @@
-module github.com/Clever/mongo-lock-go
+module github.com/Clever/mongo-lock-go/v2
 
-go 1.13
+go 1.16
 
 require (
 	github.com/stretchr/testify v1.6.1
-	gopkg.in/mgo.v2 v2.0.0-20160818020120-3f83fa500528
-	gopkg.in/yaml.v2 v2.4.0 // indirect
+	go.mongodb.org/mongo-driver v1.7.5
 )

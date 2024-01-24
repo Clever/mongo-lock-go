@@ -1,12 +1,14 @@
 package lock
 
 import (
+	"context"
 	"errors"
 	"math/rand"
 	"time"
 
-	"gopkg.in/mgo.v2"
-	"gopkg.in/mgo.v2/bson"
+	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
 var (
@@ -16,7 +18,7 @@ var (
 
 // RWMutex implements a reader/writer lock. The interfaces matches that of sync.RWMutex
 type RWMutex struct {
-	collection *mgo.Collection
+	collection *mongo.Collection
 	lockID     string
 	clientID   string
 	SleepTime  time.Duration
@@ -29,8 +31,30 @@ type mongoLock struct {
 	Readers []string `bson:"readers"`
 }
 
+var emptyWriterQuery = bson.M{
+	"$or": []bson.M{
+		{
+			"writer": "",
+		},
+		{
+			"writer": nil,
+		},
+	},
+}
+
+var emptyReaderQuery = bson.M{
+	"$or": []bson.M{
+		{
+			"readers": nil,
+		},
+		{
+			"readers": []string{},
+		},
+	},
+}
+
 // NewRWMutex returns a new RWMutex
-func NewRWMutex(collection *mgo.Collection, lockID, clientID string) *RWMutex {
+func NewRWMutex(collection *mongo.Collection, lockID, clientID string) *RWMutex {
 	return &RWMutex{
 		collection: collection,
 		lockID:     lockID,
@@ -40,22 +64,21 @@ func NewRWMutex(collection *mgo.Collection, lockID, clientID string) *RWMutex {
 }
 
 func (m *RWMutex) tryToGetWriteLock() error {
-	err := m.collection.Update(bson.M{
-		"lockID":  m.lockID,
-		"readers": []string{},
-		"writer":  "",
+	res := m.collection.FindOneAndUpdate(context.TODO(), bson.M{
+		"lockID": m.lockID,
+		"$and":   []bson.M{emptyReaderQuery, emptyWriterQuery},
 	}, bson.M{
 		"$set": bson.M{
 			"writer": m.clientID,
 		},
 	})
-	if err == nil {
+	if res.Err() == nil {
 		return nil // we got the lock!
-	} else if err != mgo.ErrNotFound {
+	} else if res.Err() != mongo.ErrNoDocuments {
 		// This only works if the mgo.Session object has Safe mode enabled.
 		// Safe is the default but something for which we should maintain
 		// external documentation
-		return err
+		return res.Err()
 	}
 
 	return ErrNotOwner
@@ -101,7 +124,7 @@ func (m *RWMutex) Lock() error {
 
 // Unlock releases the write lock
 func (m *RWMutex) Unlock() error {
-	err := m.collection.Update(bson.M{
+	res := m.collection.FindOneAndUpdate(context.TODO(), bson.M{
 		"lockID": m.lockID,
 		"writer": m.clientID,
 	}, bson.M{
@@ -109,10 +132,10 @@ func (m *RWMutex) Unlock() error {
 			"writer": "",
 		},
 	})
-	if err == mgo.ErrNotFound {
+	if res.Err() == mongo.ErrNoDocuments {
 		return ErrNotOwner
 	}
-	return err
+	return res.Err()
 }
 
 // RLock acquires the read lock
@@ -156,20 +179,20 @@ func (m *RWMutex) tryToGetReadLock(lock *mongoLock) error {
 		}
 	}
 
-	err := m.collection.Update(bson.M{
+	res := m.collection.FindOneAndUpdate(context.TODO(), bson.M{
 		"lockID": m.lockID,
-		"writer": "",
+		"$and":   []bson.M{emptyWriterQuery},
 	}, bson.M{
 		"$addToSet": bson.M{
 			"readers": m.clientID,
 		},
 	})
-	if err == nil {
+	if res.Err() == nil {
 		return nil
-	} else if err != mgo.ErrNotFound {
+	} else if res.Err() != mongo.ErrNoDocuments {
 		// This only works if the mgo.Session object has Safe mode enabled. Safe is the default but
 		// something for which we should maintain external documentation
-		return err
+		return res.Err()
 	}
 
 	return ErrNotOwner
@@ -177,7 +200,7 @@ func (m *RWMutex) tryToGetReadLock(lock *mongoLock) error {
 
 // RUnlock releases the read lock
 func (m *RWMutex) RUnlock() error {
-	err := m.collection.Update(bson.M{
+	res := m.collection.FindOneAndUpdate(context.TODO(), bson.M{
 		"lockID":  m.lockID,
 		"readers": m.clientID,
 	}, bson.M{
@@ -185,32 +208,27 @@ func (m *RWMutex) RUnlock() error {
 			"readers": m.clientID,
 		},
 	})
-	if err == mgo.ErrNotFound {
+	if res.Err() == mongo.ErrNoDocuments {
 		return ErrNotOwner
 	}
-	return err
+	return res.Err()
 }
 
+// findOrCreateLock will attempt to see if an existing lock ID exists
+// if it does not, we will create the lock. afterwards we just return the lock.
 func (m *RWMutex) findOrCreateLock() (*mongoLock, error) {
 	var lock mongoLock
-	err := m.collection.
-		Find(bson.M{"lockID": m.lockID}).
-		One(&lock)
-	if err == mgo.ErrNotFound {
-		// If the lock doesn't exist, we should create it
-		err := m.collection.Insert(&mongoLock{
-			LockID: m.lockID,
-		})
-		if mgo.IsDup(err) {
-			// Someone else has already inserted the lock
-			err := m.collection.
-				Find(bson.M{"lockID": m.lockID}).
-				One(&lock)
-			return &lock, err
-		} else if err != nil {
-			return nil, err
+
+	res := m.collection.FindOneAndUpdate(context.TODO(),
+		bson.M{"lockID": m.lockID}, bson.M{"$set": bson.M{"lockID": m.lockID}, "$setOnInsert": bson.M{"writer": "", "readers": []string{}}},
+		options.FindOneAndUpdate().SetReturnDocument(options.After).SetUpsert(true),
+	)
+	if res.Err() != nil {
+		if !mongo.IsDuplicateKeyError(res.Err()) {
+			return nil, res.Err()
 		}
-	} else if err != nil {
+	}
+	if err := res.Decode(&lock); err != nil {
 		return nil, err
 	}
 	return &lock, nil

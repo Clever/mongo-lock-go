@@ -2,13 +2,13 @@ include golang.mk
 .DEFAULT_GOAL := test # override default goal set in library makefile
 
 SHELL := /bin/bash
-PKG := github.com/Clever/mongo-lock-go
+PKG := github.com/Clever/mongo-lock-go/v2
 PKGS := $(shell go list ./... | grep -v /vendor)
-EXECUTABLE = $(shell basename $(PKG))
+EXECUTABLE := mongo-lock-go 
 
 .PHONY: test $(PKGS) run clean vendor
 
-$(eval $(call golang-version-check,1.13))
+$(eval $(call golang-version-check,1.16))
 
 test: $(PKGS)
 
