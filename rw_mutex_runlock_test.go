@@ -22,8 +22,9 @@ func TestUnlockSuccess(t *testing.T) {
 		"lockID": lockID,
 	}, options.FindOne(), &mLock)
 	assert.Equal(t, mongoLock{
-		LockID: lockID,
-		Writer: "",
+		LockID:  lockID,
+		Writer:  "",
+		Readers: []string{},
 	}, mLock)
 }
 

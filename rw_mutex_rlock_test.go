@@ -14,10 +14,7 @@ import (
 func TestRLockSuccess(t *testing.T) {
 	c := setupRWMutexTest(t)
 	// Insert the base lock
-	c.Insert(t, &mongoLock{
-		LockID: lockID,
-	})
-
+	c.InsertWithLockID(t, lockID)
 	lock := NewRWMutex(c.collection, lockID, clientID)
 	err := lock.RLock()
 
@@ -58,8 +55,9 @@ func TestRLockWaitsForWriter(t *testing.T) {
 		var mLock mongoLock
 		c.FindOne(t, bson.M{"lockID": lockID}, options.FindOne(), &mLock)
 		assert.Equal(t, mongoLock{
-			LockID: lockID,
-			Writer: "client_2",
+			LockID:  lockID,
+			Writer:  "client_2",
+			Readers: []string{},
 		}, mLock)
 	}()
 	// clear the lock after 100 milliseconds
@@ -78,6 +76,7 @@ func TestRLockWaitsForWriter(t *testing.T) {
 	c.FindOne(t, bson.M{"lockID": lockID}, options.FindOne(), &mLock)
 	assert.Equal(t, mongoLock{
 		LockID:  lockID,
+		Writer:  "",
 		Readers: []string{clientID},
 	}, mLock)
 }
@@ -116,19 +115,26 @@ func TestRLockMultipleReaders(t *testing.T) {
 func TestRLockReenter(t *testing.T) {
 	c := setupRWMutexTest(t)
 	// Insert the base lock
-	c.Insert(t, &mongoLock{
-		LockID:  lockID,
-		Readers: []string{clientID},
-	})
+	c.InsertWithLockID(t, lockID)
 
 	lock := NewRWMutex(c.collection, lockID, clientID)
-	err := lock.RLock()
-	require.NoError(t, err)
 
+	// get the read lock for the first time
+	require.NoError(t, lock.RLock())
 	var mLock mongoLock
 	c.FindOne(t, bson.M{"lockID": lockID}, options.FindOne(), &mLock)
 	assert.Equal(t, mongoLock{
 		LockID:  lockID,
+		Writer:  "",
+		Readers: []string{clientID},
+	}, mLock)
+
+	// check that grabbing it again yields same results
+	require.NoError(t, lock.RLock())
+	c.FindOne(t, bson.M{"lockID": lockID}, options.FindOne(), &mLock)
+	assert.Equal(t, mongoLock{
+		LockID:  lockID,
+		Writer:  "",
 		Readers: []string{clientID},
 	}, mLock)
 }

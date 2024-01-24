@@ -8,7 +8,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.mongodb.org/mongo-driver/bson"
-	"go.mongodb.org/mongo-driver/bson/mgocompat"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
@@ -26,8 +25,9 @@ type TestCollection struct {
 	collection *mongo.Collection
 }
 
-func (tc *TestCollection) Insert(t *testing.T, doc interface{}) {
-	_, err := tc.collection.InsertOne(context.TODO(), doc)
+func (tc *TestCollection) InsertWithLockID(t *testing.T, lockID string) {
+	mutex := NewRWMutex(tc.collection, lockID, "doesntmatter")
+	_, err := mutex.findOrCreateLock()
 	require.NoError(t, err)
 }
 
@@ -38,7 +38,7 @@ func (tc *TestCollection) FindOne(t *testing.T, filter interface{}, opts *option
 }
 
 func setupRWMutexTest(t *testing.T) *TestCollection {
-	client, err := mongo.Connect(context.TODO(), options.Client().ApplyURI(testMongoURL).SetRegistry(mgocompat.Registry))
+	client, err := mongo.Connect(context.TODO(), options.Client().ApplyURI(testMongoURL))
 	require.NoError(t, err)
 	require.NoError(t, client.Database(testDatabase).Drop(context.TODO()))
 	require.NoError(t, client.Database(testDatabase).CreateCollection(context.TODO(), "test"))
@@ -57,10 +57,7 @@ func setupRWMutexTest(t *testing.T) *TestCollection {
 func TestLockSuccess(t *testing.T) {
 	tc := setupRWMutexTest(t)
 	// Insert the base lock
-	tc.Insert(t, &mongoLock{
-		LockID: lockID,
-	})
-
+	tc.InsertWithLockID(t, lockID)
 	lock := NewRWMutex(tc.collection, lockID, clientID)
 	require.NoError(t, lock.Lock())
 
@@ -83,8 +80,9 @@ func TestLockNewSuccess(t *testing.T) {
 	var mLock mongoLock
 	c.FindOne(t, bson.M{"lockID": lockID}, options.FindOne(), &mLock)
 	assert.Equal(t, mongoLock{
-		LockID: lockID,
-		Writer: clientID,
+		LockID:  lockID,
+		Writer:  clientID,
+		Readers: []string{},
 	}, mLock)
 }
 
@@ -101,8 +99,9 @@ func TestLockWaitsForWriter(t *testing.T) {
 		var mLock mongoLock
 		c.FindOne(t, bson.M{"lockID": lockID}, options.FindOne(), &mLock)
 		assert.Equal(t, mongoLock{
-			LockID: lockID,
-			Writer: "client_2",
+			LockID:  lockID,
+			Writer:  "client_2",
+			Readers: []string{},
 		}, mLock)
 	}()
 	// clear the lock after 100 milliseconds
@@ -120,8 +119,9 @@ func TestLockWaitsForWriter(t *testing.T) {
 	var mLock mongoLock
 	c.FindOne(t, bson.M{"lockID": lockID}, options.FindOne(), &mLock)
 	assert.Equal(t, mongoLock{
-		LockID: lockID,
-		Writer: clientID,
+		LockID:  lockID,
+		Writer:  clientID,
+		Readers: []string{},
 	}, mLock)
 }
 
@@ -168,18 +168,23 @@ func TestLockWaitsForReader(t *testing.T) {
 func TestLockReenter(t *testing.T) {
 	c := setupRWMutexTest(t)
 	// Insert the base lock
-	c.Insert(t, &mongoLock{
-		LockID: lockID,
-		Writer: clientID,
-	})
+	c.InsertWithLockID(t, lockID)
 
 	lock := NewRWMutex(c.collection, lockID, clientID)
-	err := lock.Lock()
-	require.NoError(t, err)
 
+	// enter first time
+	require.NoError(t, lock.Lock())
 	var mLock mongoLock
 	c.FindOne(t, bson.M{"lockID": lockID}, options.FindOne(), &mLock)
-	require.NoError(t, err)
+	assert.Equal(t, mongoLock{
+		LockID:  lockID,
+		Writer:  clientID,
+		Readers: []string{},
+	}, mLock)
+
+	// re-enter
+	require.NoError(t, lock.Lock())
+	c.FindOne(t, bson.M{"lockID": lockID}, options.FindOne(), &mLock)
 	assert.Equal(t, mongoLock{
 		LockID:  lockID,
 		Writer:  clientID,
@@ -191,13 +196,14 @@ func TestLockReenter(t *testing.T) {
 func TestTryLock(t *testing.T) {
 	c := setupRWMutexTest(t)
 	// Insert the base lock
-	c.Insert(t, &mongoLock{
-		LockID: lockID,
-		Writer: clientID,
-	})
+	c.InsertWithLockID(t, lockID)
+
+	// client 1 grabs the lock first
+	lock := NewRWMutex(c.collection, lockID, clientID)
+	require.NoError(t, lock.TryLock())
 
 	// client2 fails
-	lock := NewRWMutex(c.collection, lockID, clientID2)
+	lock = NewRWMutex(c.collection, lockID, clientID2)
 	require.Equal(t, lock.TryLock(), ErrNotOwner)
 
 	// client1 succeeds

@@ -220,7 +220,7 @@ func (m *RWMutex) findOrCreateLock() (*mongoLock, error) {
 	var lock mongoLock
 
 	res := m.collection.FindOneAndUpdate(context.TODO(),
-		bson.M{"lockID": m.lockID}, bson.M{"$set": bson.M{"lockID": m.lockID}},
+		bson.M{"lockID": m.lockID}, bson.M{"$set": bson.M{"lockID": m.lockID}, "$setOnInsert": bson.M{"writer": "", "readers": []string{}}},
 		options.FindOneAndUpdate().SetReturnDocument(options.After).SetUpsert(true),
 	)
 	if res.Err() != nil {
