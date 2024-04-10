@@ -8,7 +8,6 @@ import (
 
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
-	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
 var (
@@ -278,17 +277,28 @@ func (m *RWMutex) findOrCreateLock() (*mongoLock, error) {
 		}}
 	}
 
-	res := m.collection.FindOneAndUpdate(context.TODO(),
-		lockIDQuery, bson.M{"$set": bson.M{"lockID": m.lockID, "districtID": m.districtID}, "$setOnInsert": bson.M{"writer": "", "readers": []string{}}},
-		options.FindOneAndUpdate().SetReturnDocument(options.After).SetUpsert(true),
-	)
-	if res.Err() != nil {
-		if !mongo.IsDuplicateKeyError(res.Err()) {
-			return nil, res.Err()
+	var foundLock mongoLock
+	err := m.collection.FindOne(context.TODO(), lockIDQuery).Decode(&foundLock)
+	if err != nil {
+		if err != mongo.ErrNoDocuments {
+			return nil, err
 		}
+
+		_, err = m.collection.InsertOne(context.TODO(), mongoLock{
+			LockID:  m.lockID,
+			Writer:  "",
+			Readers: []string{},
+		})
+		if err != nil {
+			return nil, err
+		}
+
+		err = m.collection.FindOne(context.TODO(), lockIDQuery).Decode(&lock)
+		if err != nil {
+			return nil, err
+		}
+		return &lock, nil
 	}
-	if err := res.Decode(&lock); err != nil {
-		return nil, err
-	}
-	return &lock, nil
+
+	return &foundLock, nil
 }
