@@ -100,7 +100,6 @@ func TestDistrictIDLockNewSuccess(t *testing.T) {
 		LockID:  districtID,
 		Writer:  clientID,
 		Readers: []string{},
-
 	}, mLock)
 }
 
