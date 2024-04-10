@@ -18,10 +18,12 @@ var (
 
 // RWMutex implements a reader/writer lock. The interfaces matches that of sync.RWMutex
 type RWMutex struct {
-	collection *mongo.Collection
-	lockID     string
-	clientID   string
-	SleepTime  time.Duration
+	collection         *mongo.Collection
+	lockID             string
+	districtID         string
+	clientID           string
+	SleepTime          time.Duration
+	checkBothLockTypes bool
 }
 
 // mongoLock is the resource stored in mongo to represent the lock
@@ -54,20 +56,36 @@ var emptyReaderQuery = bson.M{
 }
 
 // NewRWMutex returns a new RWMutex
-func NewRWMutex(collection *mongo.Collection, lockID, clientID string) *RWMutex {
+func NewRWMutex(
+	collection *mongo.Collection,
+	lockID, clientID, districtID string,
+	checkBothLockTypes bool) *RWMutex {
 	return &RWMutex{
-		collection: collection,
-		lockID:     lockID,
-		clientID:   clientID,
-		SleepTime:  time.Duration(5) * time.Second,
+		collection:         collection,
+		lockID:             lockID,
+		clientID:           clientID,
+		districtID:         districtID,
+		SleepTime:          time.Duration(5) * time.Second,
+		checkBothLockTypes: checkBothLockTypes,
 	}
 }
 
 func (m *RWMutex) tryToGetWriteLock() error {
-	res := m.collection.FindOneAndUpdate(context.TODO(), bson.M{
+	writeLockQuery := bson.M{
 		"lockID": m.lockID,
 		"$and":   []bson.M{emptyReaderQuery, emptyWriterQuery},
-	}, bson.M{
+	}
+	if m.checkBothLockTypes {
+		writeLockQuery = bson.M{
+			"$or": []bson.M{
+				{"lockID": m.lockID},
+				{"lockID": m.districtID},
+			},
+			"$and": []bson.M{emptyReaderQuery, emptyWriterQuery},
+		}
+	}
+
+	res := m.collection.FindOneAndUpdate(context.TODO(), writeLockQuery, bson.M{
 		"$set": bson.M{
 			"writer": m.clientID,
 		},
@@ -124,10 +142,21 @@ func (m *RWMutex) Lock() error {
 
 // Unlock releases the write lock
 func (m *RWMutex) Unlock() error {
-	res := m.collection.FindOneAndUpdate(context.TODO(), bson.M{
+	unlockQuery := bson.M{
 		"lockID": m.lockID,
 		"writer": m.clientID,
-	}, bson.M{
+	}
+	if m.checkBothLockTypes {
+		unlockQuery = bson.M{
+			"$or": []bson.M{
+				{"lockID": m.lockID},
+				{"lockID": m.districtID},
+			},
+			"writer": m.clientID,
+		}
+	}
+
+	res := m.collection.FindOneAndUpdate(context.TODO(), unlockQuery, bson.M{
 		"$set": bson.M{
 			"writer": "",
 		},
@@ -179,10 +208,21 @@ func (m *RWMutex) tryToGetReadLock(lock *mongoLock) error {
 		}
 	}
 
-	res := m.collection.FindOneAndUpdate(context.TODO(), bson.M{
+	readLockQuery := bson.M{
 		"lockID": m.lockID,
 		"$and":   []bson.M{emptyWriterQuery},
-	}, bson.M{
+	}
+	if m.checkBothLockTypes {
+		readLockQuery = bson.M{
+			"$or": []bson.M{
+				{"lockID": m.lockID},
+				{"lockID": m.districtID},
+			},
+			"$and": []bson.M{emptyWriterQuery},
+		}
+	}
+
+	res := m.collection.FindOneAndUpdate(context.TODO(), readLockQuery, bson.M{
 		"$addToSet": bson.M{
 			"readers": m.clientID,
 		},
@@ -200,10 +240,21 @@ func (m *RWMutex) tryToGetReadLock(lock *mongoLock) error {
 
 // RUnlock releases the read lock
 func (m *RWMutex) RUnlock() error {
-	res := m.collection.FindOneAndUpdate(context.TODO(), bson.M{
+	unlockQuery := bson.M{
 		"lockID":  m.lockID,
 		"readers": m.clientID,
-	}, bson.M{
+	}
+	if m.checkBothLockTypes {
+		unlockQuery = bson.M{
+			"$or": []bson.M{
+				{"lockID": m.lockID},
+				{"lockID": m.districtID},
+			},
+			"readers": m.clientID,
+		}
+	}
+
+	res := m.collection.FindOneAndUpdate(context.TODO(), unlockQuery, bson.M{
 		"$pull": bson.M{
 			"readers": m.clientID,
 		},
@@ -219,8 +270,16 @@ func (m *RWMutex) RUnlock() error {
 func (m *RWMutex) findOrCreateLock() (*mongoLock, error) {
 	var lock mongoLock
 
+	lockIDQuery := bson.M{"lockID": m.lockID}
+	if m.checkBothLockTypes {
+		lockIDQuery = bson.M{"$or": []bson.M{
+			{"lockID": m.lockID},
+			{"lockID": m.districtID},
+		}}
+	}
+
 	res := m.collection.FindOneAndUpdate(context.TODO(),
-		bson.M{"lockID": m.lockID}, bson.M{"$set": bson.M{"lockID": m.lockID}, "$setOnInsert": bson.M{"writer": "", "readers": []string{}}},
+		lockIDQuery, bson.M{"$set": bson.M{"lockID": m.lockID, "districtID": m.districtID}, "$setOnInsert": bson.M{"writer": "", "readers": []string{}}},
 		options.FindOneAndUpdate().SetReturnDocument(options.After).SetUpsert(true),
 	)
 	if res.Err() != nil {

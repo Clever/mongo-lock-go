@@ -15,7 +15,7 @@ func TestRLockSuccess(t *testing.T) {
 	c := setupRWMutexTest(t)
 	// Insert the base lock
 	c.InsertWithLockID(t, lockID)
-	lock := NewRWMutex(c.collection, lockID, clientID)
+	lock := NewRWMutex(c.collection, lockID, clientID, districtID, false)
 	err := lock.RLock()
 
 	var mLock mongoLock
@@ -30,7 +30,7 @@ func TestRLockSuccess(t *testing.T) {
 // TestRLockNewSuccess checks that RWMutex successfully acquires a new lock not in contention
 func TestRLockNewSuccess(t *testing.T) {
 	c := setupRWMutexTest(t)
-	lock := NewRWMutex(c.collection, lockID, clientID)
+	lock := NewRWMutex(c.collection, lockID, clientID, districtID, false)
 	err := lock.RLock()
 	require.NoError(t, err)
 
@@ -46,7 +46,7 @@ func TestRLockNewSuccess(t *testing.T) {
 func TestRLockWaitsForWriter(t *testing.T) {
 	c := setupRWMutexTest(t)
 
-	firstLock := NewRWMutex(c.collection, lockID, "client_2")
+	firstLock := NewRWMutex(c.collection, lockID, "client_2", districtID, false)
 	err := firstLock.Lock()
 	require.NoError(t, err)
 	// check the lock after 10 milliseconds
@@ -67,7 +67,7 @@ func TestRLockWaitsForWriter(t *testing.T) {
 		require.NoError(t, err)
 	}()
 
-	secondLock := NewRWMutex(c.collection, lockID, clientID)
+	secondLock := NewRWMutex(c.collection, lockID, clientID, districtID, false)
 	secondLock.SleepTime = time.Duration(5) * time.Millisecond
 	err = secondLock.RLock()
 	require.NoError(t, err)
@@ -86,7 +86,7 @@ func TestRLockWaitsForWriter(t *testing.T) {
 func TestRLockMultipleReaders(t *testing.T) {
 	c := setupRWMutexTest(t)
 
-	firstLock := NewRWMutex(c.collection, lockID, "client_2")
+	firstLock := NewRWMutex(c.collection, lockID, "client_2", districtID, false)
 	err := firstLock.RLock()
 	require.NoError(t, err)
 
@@ -98,7 +98,7 @@ func TestRLockMultipleReaders(t *testing.T) {
 		Readers: []string{"client_2"},
 	}, firstMLock)
 
-	secondLock := NewRWMutex(c.collection, lockID, clientID)
+	secondLock := NewRWMutex(c.collection, lockID, clientID, districtID, false)
 	secondLock.SleepTime = time.Duration(5) * time.Millisecond
 	err = secondLock.RLock()
 	require.NoError(t, err)
@@ -117,7 +117,7 @@ func TestRLockReenter(t *testing.T) {
 	// Insert the base lock
 	c.InsertWithLockID(t, lockID)
 
-	lock := NewRWMutex(c.collection, lockID, clientID)
+	lock := NewRWMutex(c.collection, lockID, clientID, districtID, false)
 
 	// get the read lock for the first time
 	require.NoError(t, lock.RLock())

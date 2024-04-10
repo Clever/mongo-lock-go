@@ -12,7 +12,7 @@ import (
 // TestUnlockSuccess - RWMutex.Unlock releases the lock correctly
 func TestUnlockSuccess(t *testing.T) {
 	c := setupRWMutexTest(t)
-	lock := NewRWMutex(c.collection, lockID, clientID)
+	lock := NewRWMutex(c.collection, lockID, clientID, districtID, false)
 	require.NoError(t, lock.Lock())
 
 	err := lock.Unlock()
@@ -31,7 +31,7 @@ func TestUnlockSuccess(t *testing.T) {
 // TestUnlockNotHeld - RWMutex.Unlock returns an error if the client did not hold the lock
 func TestUnlockNotHeld(t *testing.T) {
 	c := setupRWMutexTest(t)
-	lock := NewRWMutex(c.collection, lockID, clientID)
+	lock := NewRWMutex(c.collection, lockID, clientID, districtID, false)
 
 	err := lock.Unlock()
 	assert.Error(t, err)
