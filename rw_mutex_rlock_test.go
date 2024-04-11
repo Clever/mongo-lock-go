@@ -67,9 +67,9 @@ func TestRDistrictIDLockNewSuccess(t *testing.T) {
 	require.NoError(t, err)
 
 	var mLock mongoLock
-	c.FindOne(t, bson.M{"lockID": districtID}, options.FindOne(), &mLock)
+	c.FindOne(t, bson.M{"lockID": lockID}, options.FindOne(), &mLock)
 	assert.Equal(t, mongoLock{
-		LockID:  districtID,
+		LockID:  lockID,
 		Readers: []string{clientID},
 	}, mLock)
 }
