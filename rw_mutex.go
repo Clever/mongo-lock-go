@@ -3,6 +3,7 @@ package lock
 import (
 	"context"
 	"errors"
+	"fmt"
 	"math/rand"
 	"time"
 
@@ -78,7 +79,7 @@ func (m *RWMutex) tryToGetWriteLock() error {
 		writeLockQuery = bson.M{
 			"$or": []bson.M{
 				{"lockID": m.lockID},
-				{"lockID": m.districtID},
+				{"lockID": bson.M{"$regex": fmt.Sprintf("^%s", m.districtID)}},
 			},
 			"$and": []bson.M{emptyReaderQuery, emptyWriterQuery},
 		}
@@ -149,7 +150,7 @@ func (m *RWMutex) Unlock() error {
 		unlockQuery = bson.M{
 			"$or": []bson.M{
 				{"lockID": m.lockID},
-				{"lockID": m.districtID},
+				{"lockID": bson.M{"$regex": fmt.Sprintf("^%s", m.districtID)}},
 			},
 			"writer": m.clientID,
 		}
@@ -215,7 +216,7 @@ func (m *RWMutex) tryToGetReadLock(lock *mongoLock) error {
 		readLockQuery = bson.M{
 			"$or": []bson.M{
 				{"lockID": m.lockID},
-				{"lockID": m.districtID},
+				{"lockID": bson.M{"$regex": fmt.Sprintf("^%s", m.districtID)}},
 			},
 			"$and": []bson.M{emptyWriterQuery},
 		}
@@ -247,7 +248,7 @@ func (m *RWMutex) RUnlock() error {
 		unlockQuery = bson.M{
 			"$or": []bson.M{
 				{"lockID": m.lockID},
-				{"lockID": m.districtID},
+				{"lockID": bson.M{"$regex": fmt.Sprintf("^%s", m.districtID)}},
 			},
 			"readers": m.clientID,
 		}
@@ -273,7 +274,7 @@ func (m *RWMutex) findOrCreateLock() (*mongoLock, error) {
 	if m.checkBothLockTypes {
 		lockIDQuery = bson.M{"$or": []bson.M{
 			{"lockID": m.lockID},
-			{"lockID": m.districtID},
+			{"lockID": bson.M{"$regex": fmt.Sprintf("^%s", m.districtID)}},
 		}}
 	}
 
