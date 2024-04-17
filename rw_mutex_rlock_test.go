@@ -36,10 +36,10 @@ func TestRDistrictIDLockSuccess(t *testing.T) {
 	err := lock.RLock()
 
 	var mLock mongoLock
-	c.FindOne(t, bson.M{"lockID": districtID}, options.FindOne(), &mLock)
+	c.FindOne(t, bson.M{"lockID": lockID}, options.FindOne(), &mLock)
 	require.NoError(t, err)
 	assert.Equal(t, mongoLock{
-		LockID:  districtID,
+		LockID:  lockID,
 		Readers: []string{clientID},
 	}, mLock)
 }
@@ -117,16 +117,16 @@ func TestRLockWaitsForWriter(t *testing.T) {
 func TestRDistrictIDLockWaitsForWriter(t *testing.T) {
 	c := setupRWMutexTest(t)
 
-	firstLock := NewRWMutex(c.collection, districtID, "client_2", districtID, false)
+	firstLock := NewRWMutex(c.collection, districtID, "client_2", districtID, true)
 	err := firstLock.Lock()
 	require.NoError(t, err)
 	// check the lock after 10 milliseconds
 	go func() {
 		time.Sleep(time.Duration(10) * time.Millisecond)
 		var mLock mongoLock
-		c.FindOne(t, bson.M{"lockID": districtID}, options.FindOne(), &mLock)
+		c.FindOne(t, bson.M{"lockID": lockID}, options.FindOne(), &mLock)
 		assert.Equal(t, mongoLock{
-			LockID:  districtID,
+			LockID:  lockID,
 			Writer:  "client_2",
 			Readers: []string{},
 		}, mLock)
@@ -144,9 +144,9 @@ func TestRDistrictIDLockWaitsForWriter(t *testing.T) {
 	require.NoError(t, err)
 
 	var mLock mongoLock
-	c.FindOne(t, bson.M{"lockID": districtID}, options.FindOne(), &mLock)
+	c.FindOne(t, bson.M{"lockID": lockID}, options.FindOne(), &mLock)
 	assert.Equal(t, mongoLock{
-		LockID:  districtID,
+		LockID:  lockID,
 		Writer:  "",
 		Readers: []string{clientID},
 	}, mLock)

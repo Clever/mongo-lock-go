@@ -210,9 +210,9 @@ func TestDistrictIDLockWaitsForWriter(t *testing.T) {
 	go func() {
 		time.Sleep(time.Duration(10) * time.Millisecond)
 		var mLock mongoLock
-		c.FindOne(t, bson.M{"lockID": districtID}, options.FindOne(), &mLock)
+		c.FindOne(t, bson.M{"lockID": lockID}, options.FindOne(), &mLock)
 		assert.Equal(t, mongoLock{
-			LockID:  districtID,
+			LockID:  lockID,
 			Writer:  "client_2",
 			Readers: []string{},
 		}, mLock)
@@ -231,9 +231,9 @@ func TestDistrictIDLockWaitsForWriter(t *testing.T) {
 	require.NoError(t, err)
 
 	var mLock mongoLock
-	c.FindOne(t, bson.M{"lockID": districtID}, options.FindOne(), &mLock)
+	c.FindOne(t, bson.M{"lockID": lockID}, options.FindOne(), &mLock)
 	assert.Equal(t, mongoLock{
-		LockID:  districtID,
+		LockID:  lockID,
 		Writer:  clientID,
 		Readers: []string{},
 	}, mLock)
@@ -289,9 +289,9 @@ func TestDistrictIDLockWaitsForReader(t *testing.T) {
 	go func() {
 		time.Sleep(time.Duration(10) * time.Millisecond)
 		var mLock mongoLock
-		c.FindOne(t, bson.M{"lockID": districtID}, options.FindOne(), &mLock)
+		c.FindOne(t, bson.M{"lockID": lockID}, options.FindOne(), &mLock)
 		assert.Equal(t, mongoLock{
-			LockID:  districtID,
+			LockID:  lockID,
 			Writer:  "",
 			Readers: []string{"client_2"},
 		}, mLock)
@@ -309,9 +309,9 @@ func TestDistrictIDLockWaitsForReader(t *testing.T) {
 	require.NoError(t, err)
 
 	var mLock mongoLock
-	c.FindOne(t, bson.M{"lockID": districtID}, options.FindOne(), &mLock)
+	c.FindOne(t, bson.M{"lockID": lockID}, options.FindOne(), &mLock)
 	assert.Equal(t, mongoLock{
-		LockID:  districtID,
+		LockID:  lockID,
 		Writer:  clientID,
 		Readers: []string{},
 	}, mLock)
@@ -356,18 +356,18 @@ func TestDistrictIDLockReenter(t *testing.T) {
 	// enter first time
 	require.NoError(t, lock.Lock())
 	var mLock mongoLock
-	c.FindOne(t, bson.M{"lockID": districtID}, options.FindOne(), &mLock)
+	c.FindOne(t, bson.M{"lockID": lockID}, options.FindOne(), &mLock)
 	assert.Equal(t, mongoLock{
-		LockID:  districtID,
+		LockID:  lockID,
 		Writer:  clientID,
 		Readers: []string{},
 	}, mLock)
 
 	// re-enter
 	require.NoError(t, lock.Lock())
-	c.FindOne(t, bson.M{"lockID": districtID}, options.FindOne(), &mLock)
+	c.FindOne(t, bson.M{"lockID": lockID}, options.FindOne(), &mLock)
 	assert.Equal(t, mongoLock{
-		LockID:  districtID,
+		LockID:  lockID,
 		Writer:  clientID,
 		Readers: []string{},
 	}, mLock)
@@ -419,9 +419,9 @@ func TestTryDistrictIDLock(t *testing.T) {
 	require.NoError(t, lock.TryLock())
 
 	var mLock mongoLock
-	c.FindOne(t, bson.M{"lockID": districtID}, options.FindOne(), &mLock)
+	c.FindOne(t, bson.M{"lockID": lockID}, options.FindOne(), &mLock)
 	assert.Equal(t, mongoLock{
-		LockID:  districtID,
+		LockID:  lockID,
 		Writer:  clientID,
 		Readers: []string{},
 	}, mLock)
