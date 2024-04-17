@@ -15,7 +15,7 @@ import (
 const (
 	clientID       = "clientID"
 	clientID2      = "clientID-2"
-	lockID         = "this be a lock id"
+	lockID         = "districtID:this be a lock id"
 	districtID     = "districtID"
 	testMongoURL   = "mongodb://127.0.0.1"
 	testDatabase   = "test"
@@ -85,6 +85,63 @@ func TestLockNewSuccess(t *testing.T) {
 		Writer:  clientID,
 		Readers: []string{},
 	}, mLock)
+}
+
+// TestLockNewChangesIncorrectLockIDSuccess checks that we successfully acquire a new lock and change its ID
+// to the correct one
+func TestLockNewChangesIncorrectLockIDSuccess(t *testing.T) {
+	tc := setupRWMutexTest(t)
+	// Insert the base lock
+	tc.InsertWithLockID(t, districtID)
+	lock := NewRWMutex(tc.collection, lockID, clientID, districtID, true)
+	require.NoError(t, lock.Lock())
+
+	var mLock mongoLock
+	tc.FindOne(t, bson.M{"lockID": lockID}, options.FindOne(), &mLock)
+	assert.Equal(t, mongoLock{
+		LockID:  lockID,
+		Writer:  clientID,
+		Readers: []string{},
+	}, mLock)
+	totalLocks, err := tc.collection.CountDocuments(context.TODO(), bson.M{}, options.Count())
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), totalLocks)
+}
+
+// TestChangedLockIDFindable checks that we successfully acquire a new lock and change its ID
+// then can still find that lock when trying to find it with the old ID
+func TestChangedLockIDFindable(t *testing.T) {
+	tc := setupRWMutexTest(t)
+	// Insert the base lock
+	tc.InsertWithLockID(t, districtID)
+	lock := NewRWMutex(tc.collection, lockID, clientID, districtID, true)
+	require.NoError(t, lock.Lock())
+
+	var mLock mongoLock
+	tc.FindOne(t, bson.M{"lockID": lockID}, options.FindOne(), &mLock)
+	assert.Equal(t, mongoLock{
+		LockID:  lockID,
+		Writer:  clientID,
+		Readers: []string{},
+	}, mLock)
+	totalLocks, err := tc.collection.CountDocuments(context.TODO(), bson.M{}, options.Count())
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), totalLocks)
+	require.NoError(t, lock.Unlock())
+
+	lock2 := NewRWMutex(tc.collection, districtID, clientID, districtID, true)
+	require.NoError(t, lock2.Lock())
+	var mLock2 mongoLock
+	tc.FindOne(t, bson.M{"lockID": lockID}, options.FindOne(), &mLock2)
+	assert.Equal(t, mongoLock{
+		LockID:  lockID,
+		Writer:  clientID,
+		Readers: []string{},
+	}, mLock2)
+
+	totalLocks, err = tc.collection.CountDocuments(context.TODO(), bson.M{}, options.Count())
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), totalLocks)
 }
 
 // TestDistrictTypeLockNewSuccess checks that we successfully acquire a new lock not in contention

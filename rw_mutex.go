@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"math/rand"
+	"strings"
 	"time"
 
 	"go.mongodb.org/mongo-driver/bson"
@@ -299,6 +300,22 @@ func (m *RWMutex) findOrCreateLock() (*mongoLock, error) {
 			return nil, err
 		}
 		return &lock, nil
+	}
+	if foundLock.LockID != m.lockID &&
+		foundLock.LockID == m.districtID &&
+		strings.HasPrefix(m.lockID, m.districtID) {
+		_, err = m.collection.UpdateOne(
+			context.TODO(),
+			bson.M{"lockID": foundLock.LockID},
+			bson.M{
+				"$set": bson.M{
+					"lockID": m.lockID,
+				},
+			},
+		)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	return &foundLock, nil
