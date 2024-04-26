@@ -261,36 +261,3 @@ func (m *RWMutex) RUnlock() error {
 
 	return nil
 }
-
-// findOrCreateLock will attempt to see if an existing lock ID exists
-// if it does not, we will create the lock. afterwards we just return the lock.
-func (m *RWMutex) findOrCreateLock() (*mongoLock, error) {
-	var lock mongoLock
-
-	lockIDQuery := bson.M{"lockID": m.lockID}
-
-	var foundLock mongoLock
-	err := m.collection.FindOne(context.TODO(), lockIDQuery).Decode(&foundLock)
-	if err != nil {
-		if err != mongo.ErrNoDocuments {
-			return nil, err
-		}
-
-		_, err = m.collection.InsertOne(context.TODO(), mongoLock{
-			LockID:  m.lockID,
-			Writer:  "",
-			Readers: []string{},
-		})
-		if err != nil {
-			return nil, err
-		}
-
-		err = m.collection.FindOne(context.TODO(), lockIDQuery).Decode(&lock)
-		if err != nil {
-			return nil, err
-		}
-		return &lock, nil
-	}
-
-	return &foundLock, nil
-}

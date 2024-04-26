@@ -27,8 +27,16 @@ type TestCollection struct {
 }
 
 func (tc *TestCollection) InsertWithLockID(t *testing.T, lockID string) {
-	mutex := NewRWMutex(tc.collection, lockID, "doesntmatter")
-	_, err := mutex.findOrCreateLock()
+	_, err := tc.collection.InsertOne(context.TODO(), mongoLock{
+		LockID:  lockID,
+		Writer:  "",
+		Readers: []string{},
+	})
+	require.NoError(t, err)
+	var lock mongoLock
+	err = tc.collection.FindOne(context.TODO(), bson.M{
+		"lockID": lockID,
+	}).Decode(&lock)
 	require.NoError(t, err)
 }
 
