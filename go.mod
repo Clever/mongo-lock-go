@@ -1,4 +1,4 @@
-module github.com/Clever/mongo-lock-go/v2
+module github.com/Clever/mongo-lock-go/v3
 
 go 1.21
 
