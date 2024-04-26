@@ -141,7 +141,6 @@ func (m *RWMutex) Unlock() error {
 		bson.M{
 			"lockID": m.lockID,
 			"writer": m.clientID,
-			"$or":    emptyReaderQuery["$or"],
 		},
 	)
 	if err != nil {
@@ -152,27 +151,7 @@ func (m *RWMutex) Unlock() error {
 		return nil
 	}
 
-	updateRes, err := m.collection.UpdateOne(
-		context.TODO(),
-		bson.M{
-			"lockID": m.lockID,
-			"writer": m.clientID,
-		},
-		bson.M{
-			"$set": bson.M{
-				"writer": "",
-			},
-		},
-	)
-
-	if err != nil {
-		return err
-	}
-
-	if updateRes.MatchedCount <= 0 {
-		return ErrNotOwner
-	}
-	return nil
+	return ErrNotOwner
 }
 
 // RLock acquires the read lock
