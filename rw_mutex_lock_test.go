@@ -27,7 +27,7 @@ type TestCollection struct {
 }
 
 func (tc *TestCollection) InsertWithLockID(t *testing.T, lockID string) {
-	mutex := NewRWMutex(tc.collection, lockID, "doesntmatter", districtID, false)
+	mutex := NewRWMutex(tc.collection, lockID, "doesntmatter")
 	_, err := mutex.findOrCreateLock()
 	require.NoError(t, err)
 }
@@ -59,7 +59,7 @@ func TestLockSuccess(t *testing.T) {
 	tc := setupRWMutexTest(t)
 	// Insert the base lock
 	tc.InsertWithLockID(t, lockID)
-	lock := NewRWMutex(tc.collection, lockID, clientID, districtID, false)
+	lock := NewRWMutex(tc.collection, lockID, clientID)
 	require.NoError(t, lock.Lock())
 
 	var mLock mongoLock
@@ -74,7 +74,7 @@ func TestLockSuccess(t *testing.T) {
 // TestLockNewSuccess checks that we successfully acquire a new lock not in contention
 func TestLockNewSuccess(t *testing.T) {
 	c := setupRWMutexTest(t)
-	lock := NewRWMutex(c.collection, lockID, clientID, districtID, false)
+	lock := NewRWMutex(c.collection, lockID, clientID)
 	err := lock.Lock()
 	require.NoError(t, err)
 
@@ -82,79 +82,6 @@ func TestLockNewSuccess(t *testing.T) {
 	c.FindOne(t, bson.M{"lockID": lockID}, options.FindOne(), &mLock)
 	assert.Equal(t, mongoLock{
 		LockID:  lockID,
-		Writer:  clientID,
-		Readers: []string{},
-	}, mLock)
-}
-
-// TestLockNewChangesIncorrectLockIDSuccess checks that we successfully acquire a new lock and change its ID
-// to the correct one
-func TestLockNewChangesIncorrectLockIDSuccess(t *testing.T) {
-	tc := setupRWMutexTest(t)
-	// Insert the base lock
-	tc.InsertWithLockID(t, districtID)
-	lock := NewRWMutex(tc.collection, lockID, clientID, districtID, true)
-	require.NoError(t, lock.Lock())
-
-	var mLock mongoLock
-	tc.FindOne(t, bson.M{"lockID": lockID}, options.FindOne(), &mLock)
-	assert.Equal(t, mongoLock{
-		LockID:  lockID,
-		Writer:  clientID,
-		Readers: []string{},
-	}, mLock)
-	totalLocks, err := tc.collection.CountDocuments(context.TODO(), bson.M{}, options.Count())
-	require.NoError(t, err)
-	assert.Equal(t, int64(1), totalLocks)
-}
-
-// TestChangedLockIDFindable checks that we successfully acquire a new lock and change its ID
-// then can still find that lock when trying to find it with the old ID
-func TestChangedLockIDFindable(t *testing.T) {
-	tc := setupRWMutexTest(t)
-	// Insert the base lock
-	tc.InsertWithLockID(t, districtID)
-	lock := NewRWMutex(tc.collection, lockID, clientID, districtID, true)
-	require.NoError(t, lock.Lock())
-
-	var mLock mongoLock
-	tc.FindOne(t, bson.M{"lockID": lockID}, options.FindOne(), &mLock)
-	assert.Equal(t, mongoLock{
-		LockID:  lockID,
-		Writer:  clientID,
-		Readers: []string{},
-	}, mLock)
-	totalLocks, err := tc.collection.CountDocuments(context.TODO(), bson.M{}, options.Count())
-	require.NoError(t, err)
-	assert.Equal(t, int64(1), totalLocks)
-	require.NoError(t, lock.Unlock())
-
-	lock2 := NewRWMutex(tc.collection, districtID, clientID, districtID, true)
-	require.NoError(t, lock2.Lock())
-	var mLock2 mongoLock
-	tc.FindOne(t, bson.M{"lockID": lockID}, options.FindOne(), &mLock2)
-	assert.Equal(t, mongoLock{
-		LockID:  lockID,
-		Writer:  clientID,
-		Readers: []string{},
-	}, mLock2)
-
-	totalLocks, err = tc.collection.CountDocuments(context.TODO(), bson.M{}, options.Count())
-	require.NoError(t, err)
-	assert.Equal(t, int64(1), totalLocks)
-}
-
-// TestDistrictTypeLockNewSuccess checks that we successfully acquire a new lock not in contention
-func TestDistrictIDLockNewSuccess(t *testing.T) {
-	c := setupRWMutexTest(t)
-	lock := NewRWMutex(c.collection, districtID, clientID, districtID, true)
-	err := lock.Lock()
-	require.NoError(t, err)
-
-	var mLock mongoLock
-	c.FindOne(t, bson.M{"lockID": districtID}, options.FindOne(), &mLock)
-	assert.Equal(t, mongoLock{
-		LockID:  districtID,
 		Writer:  clientID,
 		Readers: []string{},
 	}, mLock)
@@ -164,7 +91,7 @@ func TestDistrictIDLockNewSuccess(t *testing.T) {
 func TestLockWaitsForWriter(t *testing.T) {
 	c := setupRWMutexTest(t)
 
-	firstLock := NewRWMutex(c.collection, lockID, "client_2", districtID, false)
+	firstLock := NewRWMutex(c.collection, lockID, "client_2")
 	err := firstLock.Lock()
 	require.NoError(t, err)
 	// check the lock after 10 milliseconds
@@ -185,47 +112,7 @@ func TestLockWaitsForWriter(t *testing.T) {
 		require.NoError(t, err)
 	}()
 
-	secondLock := NewRWMutex(c.collection, lockID, clientID, districtID, false)
-	secondLock.SleepTime = time.Duration(5) * time.Millisecond
-	err = secondLock.Lock()
-	require.NoError(t, err)
-
-	var mLock mongoLock
-	c.FindOne(t, bson.M{"lockID": lockID}, options.FindOne(), &mLock)
-	assert.Equal(t, mongoLock{
-		LockID:  lockID,
-		Writer:  clientID,
-		Readers: []string{},
-	}, mLock)
-}
-
-// TestDistrictIDLockWaitsForWriter checks that we wait until an existing writer has released the lock
-func TestDistrictIDLockWaitsForWriter(t *testing.T) {
-	c := setupRWMutexTest(t)
-
-	firstLock := NewRWMutex(c.collection, districtID, "client_2", districtID, true)
-	err := firstLock.Lock()
-	require.NoError(t, err)
-	// check the lock after 10 milliseconds
-	go func() {
-		time.Sleep(time.Duration(10) * time.Millisecond)
-		var mLock mongoLock
-		c.FindOne(t, bson.M{"lockID": lockID}, options.FindOne(), &mLock)
-		assert.Equal(t, mongoLock{
-			LockID:  lockID,
-			Writer:  "client_2",
-			Readers: []string{},
-		}, mLock)
-	}()
-	// clear the lock after 100 milliseconds
-	go func() {
-		time.Sleep(time.Duration(100) * time.Millisecond)
-		err := firstLock.Unlock()
-		require.NoError(t, err)
-	}()
-
-	// fetch the lock with districtID since lockID is different here than what is in mongo
-	secondLock := NewRWMutex(c.collection, lockID, clientID, districtID, true)
+	secondLock := NewRWMutex(c.collection, lockID, clientID)
 	secondLock.SleepTime = time.Duration(5) * time.Millisecond
 	err = secondLock.Lock()
 	require.NoError(t, err)
@@ -243,7 +130,7 @@ func TestDistrictIDLockWaitsForWriter(t *testing.T) {
 func TestLockWaitsForReader(t *testing.T) {
 	c := setupRWMutexTest(t)
 
-	firstLock := NewRWMutex(c.collection, lockID, "client_2", districtID, false)
+	firstLock := NewRWMutex(c.collection, lockID, "client_2")
 	err := firstLock.RLock()
 	require.NoError(t, err)
 	// check the lock after 10 milliseconds
@@ -264,46 +151,7 @@ func TestLockWaitsForReader(t *testing.T) {
 		require.NoError(t, err)
 	}()
 
-	secondLock := NewRWMutex(c.collection, lockID, clientID, districtID, false)
-	secondLock.SleepTime = time.Duration(5) * time.Millisecond
-	err = secondLock.Lock()
-	require.NoError(t, err)
-
-	var mLock mongoLock
-	c.FindOne(t, bson.M{"lockID": lockID}, options.FindOne(), &mLock)
-	assert.Equal(t, mongoLock{
-		LockID:  lockID,
-		Writer:  clientID,
-		Readers: []string{},
-	}, mLock)
-}
-
-// TestDistrictIDLockWaitsForReader checks that we wait until an existing reader has released the lock
-func TestDistrictIDLockWaitsForReader(t *testing.T) {
-	c := setupRWMutexTest(t)
-
-	firstLock := NewRWMutex(c.collection, districtID, "client_2", districtID, true)
-	err := firstLock.RLock()
-	require.NoError(t, err)
-	// check the lock after 10 milliseconds
-	go func() {
-		time.Sleep(time.Duration(10) * time.Millisecond)
-		var mLock mongoLock
-		c.FindOne(t, bson.M{"lockID": lockID}, options.FindOne(), &mLock)
-		assert.Equal(t, mongoLock{
-			LockID:  lockID,
-			Writer:  "",
-			Readers: []string{"client_2"},
-		}, mLock)
-	}()
-	// clear the lock after 100 milliseconds
-	go func() {
-		time.Sleep(time.Duration(100) * time.Millisecond)
-		err := firstLock.RUnlock()
-		require.NoError(t, err)
-	}()
-
-	secondLock := NewRWMutex(c.collection, lockID, clientID, districtID, true)
+	secondLock := NewRWMutex(c.collection, lockID, clientID)
 	secondLock.SleepTime = time.Duration(5) * time.Millisecond
 	err = secondLock.Lock()
 	require.NoError(t, err)
@@ -323,35 +171,7 @@ func TestLockReenter(t *testing.T) {
 	// Insert the base lock
 	c.InsertWithLockID(t, lockID)
 
-	lock := NewRWMutex(c.collection, lockID, clientID, districtID, false)
-
-	// enter first time
-	require.NoError(t, lock.Lock())
-	var mLock mongoLock
-	c.FindOne(t, bson.M{"lockID": lockID}, options.FindOne(), &mLock)
-	assert.Equal(t, mongoLock{
-		LockID:  lockID,
-		Writer:  clientID,
-		Readers: []string{},
-	}, mLock)
-
-	// re-enter
-	require.NoError(t, lock.Lock())
-	c.FindOne(t, bson.M{"lockID": lockID}, options.FindOne(), &mLock)
-	assert.Equal(t, mongoLock{
-		LockID:  lockID,
-		Writer:  clientID,
-		Readers: []string{},
-	}, mLock)
-}
-
-// TestDistrictIDLockReenter checks that RWMutex.lock reenters a write lock with the same client id
-func TestDistrictIDLockReenter(t *testing.T) {
-	c := setupRWMutexTest(t)
-	// Insert the base lock
-	c.InsertWithLockID(t, districtID)
-
-	lock := NewRWMutex(c.collection, lockID, clientID, districtID, true)
+	lock := NewRWMutex(c.collection, lockID, clientID)
 
 	// enter first time
 	require.NoError(t, lock.Lock())
@@ -380,42 +200,15 @@ func TestTryLock(t *testing.T) {
 	c.InsertWithLockID(t, lockID)
 
 	// client 1 grabs the lock first
-	lock := NewRWMutex(c.collection, lockID, clientID, districtID, false)
+	lock := NewRWMutex(c.collection, lockID, clientID)
 	require.NoError(t, lock.TryLock())
 
 	// client2 fails
-	lock = NewRWMutex(c.collection, lockID, clientID2, districtID, false)
+	lock = NewRWMutex(c.collection, lockID, clientID2)
 	require.Equal(t, lock.TryLock(), ErrNotOwner)
 
 	// client1 succeeds
-	lock = NewRWMutex(c.collection, lockID, clientID, districtID, false)
-	require.NoError(t, lock.TryLock())
-
-	var mLock mongoLock
-	c.FindOne(t, bson.M{"lockID": lockID}, options.FindOne(), &mLock)
-	assert.Equal(t, mongoLock{
-		LockID:  lockID,
-		Writer:  clientID,
-		Readers: []string{},
-	}, mLock)
-}
-
-// TestTryDistrictIDLock checks that RWMutex.lock reenters a write lock with the same client id
-func TestTryDistrictIDLock(t *testing.T) {
-	c := setupRWMutexTest(t)
-	// Insert the base lock
-	c.InsertWithLockID(t, districtID)
-
-	// client 1 grabs the lock first
-	lock := NewRWMutex(c.collection, lockID, clientID, districtID, true)
-	require.NoError(t, lock.TryLock())
-
-	// client2 fails
-	lock = NewRWMutex(c.collection, lockID, clientID2, districtID, true)
-	require.Equal(t, lock.TryLock(), ErrNotOwner)
-
-	// client1 succeeds
-	lock = NewRWMutex(c.collection, lockID, clientID, districtID, true)
+	lock = NewRWMutex(c.collection, lockID, clientID)
 	require.NoError(t, lock.TryLock())
 
 	var mLock mongoLock

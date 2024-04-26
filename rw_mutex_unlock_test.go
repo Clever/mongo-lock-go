@@ -12,11 +12,11 @@ import (
 // TestRUnlockSuccess - RWMutex.RUnlock releases the lock correctly
 func TestRUnlockSuccess(t *testing.T) {
 	c := setupRWMutexTest(t)
-	lock := NewRWMutex(c.collection, lockID, clientID, districtID, true)
+	lock := NewRWMutex(c.collection, lockID, clientID)
 	require.NoError(t, lock.RLock())
 
 	// add a second lock to check RWMutex only removes the read lock for its client
-	secondLock := NewRWMutex(c.collection, lockID, "client_2", districtID, true)
+	secondLock := NewRWMutex(c.collection, lockID, "client_2")
 	require.NoError(t, secondLock.RLock())
 
 	err := lock.RUnlock()
@@ -35,7 +35,7 @@ func TestRUnlockSuccess(t *testing.T) {
 // TestRUnlockNotHeld - RWMutex.RUnlock returns an error if the client did not hold the lock
 func TestRUnlockNotHeld(t *testing.T) {
 	c := setupRWMutexTest(t)
-	lock := NewRWMutex(c.collection, lockID, clientID, districtID, true)
+	lock := NewRWMutex(c.collection, lockID, clientID)
 
 	err := lock.RUnlock()
 	assert.Error(t, err)

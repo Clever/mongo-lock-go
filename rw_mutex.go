@@ -3,13 +3,12 @@ package lock
 import (
 	"context"
 	"errors"
-	"fmt"
 	"math/rand"
-	"strings"
 	"time"
 
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
 var (
@@ -19,12 +18,10 @@ var (
 
 // RWMutex implements a reader/writer lock. The interfaces matches that of sync.RWMutex
 type RWMutex struct {
-	collection         *mongo.Collection
-	lockID             string
-	districtID         string
-	clientID           string
-	SleepTime          time.Duration
-	checkBothLockTypes bool
+	collection *mongo.Collection
+	lockID     string
+	clientID   string
+	SleepTime  time.Duration
 }
 
 // mongoLock is the resource stored in mongo to represent the lock
@@ -37,6 +34,9 @@ type mongoLock struct {
 var emptyWriterQuery = bson.M{
 	"$or": []bson.M{
 		{
+			"writer": bson.M{"$exists": false},
+		},
+		{
 			"writer": "",
 		},
 		{
@@ -48,91 +48,83 @@ var emptyWriterQuery = bson.M{
 var emptyReaderQuery = bson.M{
 	"$or": []bson.M{
 		{
-			"readers": nil,
+			"readers": bson.M{"$exists": false},
 		},
 		{
-			"readers": []string{},
+			"readers": bson.M{"$size": 0},
+		},
+		{
+			"readers": nil,
 		},
 	},
+}
+
+func deepCloneMap(originalMap bson.M) bson.M {
+	clonedMap := make(bson.M)
+	for k, v := range originalMap {
+		switch v := v.(type) {
+		case bson.M:
+			clonedMap[k] = deepCloneMap(v)
+		case []bson.M:
+			clonedSlice := make([]bson.M, len(v))
+			for i, item := range v {
+				clonedSlice[i] = deepCloneMap(item)
+			}
+			clonedMap[k] = clonedSlice
+		default:
+			clonedMap[k] = v
+		}
+	}
+	return clonedMap
 }
 
 // NewRWMutex returns a new RWMutex
 func NewRWMutex(
 	collection *mongo.Collection,
-	lockID, clientID, districtID string,
-	checkBothLockTypes bool) *RWMutex {
+	lockID, clientID string) *RWMutex {
 	return &RWMutex{
-		collection:         collection,
-		lockID:             lockID,
-		clientID:           clientID,
-		districtID:         districtID,
-		SleepTime:          time.Duration(5) * time.Second,
-		checkBothLockTypes: checkBothLockTypes,
+		collection: collection,
+		lockID:     lockID,
+		clientID:   clientID,
+		SleepTime:  time.Duration(5) * time.Second,
 	}
 }
 
-func (m *RWMutex) tryToGetWriteLock() error {
+func (m *RWMutex) TryLock() error {
+	writerQuery := deepCloneMap(emptyWriterQuery)
+	writerQuery["$or"] = append(writerQuery["$or"].([]bson.M), bson.M{"writer": m.clientID})
 	writeLockQuery := bson.M{
 		"lockID": m.lockID,
-		"$and":   []bson.M{emptyReaderQuery, emptyWriterQuery},
+		"$and":   []bson.M{emptyReaderQuery, writerQuery},
 	}
-	if m.checkBothLockTypes {
-		writeLockQuery = bson.M{
-			"$or": []bson.M{
-				{"lockID": m.lockID},
-				{"lockID": bson.M{"$regex": fmt.Sprintf("^%s", m.districtID)}},
+	res, err := m.collection.UpdateOne(
+		context.TODO(),
+		writeLockQuery,
+		bson.M{
+			"$set": bson.M{
+				"writer":  m.clientID,
+				"readers": []string{},
 			},
-			"$and": []bson.M{emptyReaderQuery, emptyWriterQuery},
-		}
-	}
-
-	res := m.collection.FindOneAndUpdate(context.TODO(), writeLockQuery, bson.M{
-		"$set": bson.M{
-			"writer": m.clientID,
 		},
-	})
-	if res.Err() == nil {
-		return nil // we got the lock!
-	} else if res.Err() != mongo.ErrNoDocuments {
-		// This only works if the mgo.Session object has Safe mode enabled.
-		// Safe is the default but something for which we should maintain
-		// external documentation
-		return res.Err()
+		options.Update().SetUpsert(true))
+	if err != nil {
+		if mongo.IsDuplicateKeyError(err) {
+			return ErrNotOwner
+		}
+		return err
+	}
+	if res.MatchedCount > 0 || res.UpsertedCount > 0 {
+		return nil
 	}
 
 	return ErrNotOwner
 }
 
-// TryLock tries to acquire the write lock
-func (m *RWMutex) TryLock() error {
-	lock, err := m.findOrCreateLock()
-	if err != nil {
-		return err
-	}
-
-	// if this clientID already has the lock, re-enter the lock and return
-	if lock.Writer == m.clientID {
-		return nil
-	}
-
-	return m.tryToGetWriteLock()
-}
-
 // Lock acquires the write lock
 func (m *RWMutex) Lock() error {
-	lock, err := m.findOrCreateLock()
-	if err != nil {
-		return err
-	}
-
-	// if this clientID already has the lock, re-enter the lock and return
-	if lock.Writer == m.clientID {
-		return nil
-	}
-
 	for {
-		err := m.tryToGetWriteLock()
-		if err == ErrNotOwner {
+		err := m.TryLock()
+		if err != nil && err == ErrNotOwner {
 			jitter := time.Duration(rand.Int63n(1000)) * time.Millisecond
 			time.Sleep(m.SleepTime + jitter)
 			continue // keep looping
@@ -143,41 +135,51 @@ func (m *RWMutex) Lock() error {
 
 // Unlock releases the write lock
 func (m *RWMutex) Unlock() error {
-	unlockQuery := bson.M{
-		"lockID": m.lockID,
-		"writer": m.clientID,
-	}
-	if m.checkBothLockTypes {
-		unlockQuery = bson.M{
-			"$or": []bson.M{
-				{"lockID": m.lockID},
-				{"lockID": bson.M{"$regex": fmt.Sprintf("^%s", m.districtID)}},
-			},
+
+	deleteRes, err := m.collection.DeleteOne(
+		context.TODO(),
+		bson.M{
+			"lockID": m.lockID,
 			"writer": m.clientID,
-		}
-	}
-
-	res := m.collection.FindOneAndUpdate(context.TODO(), unlockQuery, bson.M{
-		"$set": bson.M{
-			"writer": "",
+			"$or":    emptyReaderQuery["$or"],
 		},
-	})
-	if res.Err() == mongo.ErrNoDocuments {
-		return ErrNotOwner
-	}
-	return res.Err()
-}
-
-// RLock acquires the read lock
-func (m *RWMutex) RLock() error {
-	lock, err := m.findOrCreateLock()
+	)
 	if err != nil {
 		return err
 	}
 
+	if deleteRes.DeletedCount > 0 {
+		return nil
+	}
+
+	updateRes, err := m.collection.UpdateOne(
+		context.TODO(),
+		bson.M{
+			"lockID": m.lockID,
+			"writer": m.clientID,
+		},
+		bson.M{
+			"$set": bson.M{
+				"writer": "",
+			},
+		},
+	)
+
+	if err != nil {
+		return err
+	}
+
+	if updateRes.MatchedCount <= 0 {
+		return ErrNotOwner
+	}
+	return nil
+}
+
+// RLock acquires the read lock
+func (m *RWMutex) RLock() error {
 	for {
-		err := m.tryToGetReadLock(lock)
-		if err == ErrNotOwner {
+		err := m.TryRLock()
+		if err != nil && err == ErrNotOwner {
 			jitter := time.Duration(rand.Int63n(1000)) * time.Millisecond
 			time.Sleep(m.SleepTime + jitter)
 			continue
@@ -188,52 +190,30 @@ func (m *RWMutex) RLock() error {
 
 // TryRLock tries to acquires the read lock
 func (m *RWMutex) TryRLock() error {
-	lock, err := m.findOrCreateLock()
+	updateRes, err := m.collection.UpdateOne(
+		context.TODO(),
+		bson.M{
+			"lockID": m.lockID,
+			"$or":    emptyWriterQuery["$or"],
+		},
+		bson.M{
+			"$set": bson.M{
+				"writer": "",
+			},
+			"$addToSet": bson.M{
+				"readers": m.clientID,
+			},
+		},
+		options.Update().SetUpsert(true))
 	if err != nil {
+		if mongo.IsDuplicateKeyError(err) {
+			return ErrNotOwner
+		}
 		return err
 	}
 
-	return m.tryToGetReadLock(lock)
-}
-
-// tryToGetReadLock makes an attempt to acquire a read lock given an existing lock.
-// It will return:
-// - `nil` if the lock is acquired.
-// - ErrNotOwner if a writer has acquired the lock
-// - a non-nil error in a failure case
-func (m *RWMutex) tryToGetReadLock(lock *mongoLock) error {
-	for _, reader := range lock.Readers {
-		// if this clientID already has a read lock, re-enter the lock and return
-		if reader == m.clientID {
-			return nil
-		}
-	}
-
-	readLockQuery := bson.M{
-		"lockID": m.lockID,
-		"$and":   []bson.M{emptyWriterQuery},
-	}
-	if m.checkBothLockTypes {
-		readLockQuery = bson.M{
-			"$or": []bson.M{
-				{"lockID": m.lockID},
-				{"lockID": bson.M{"$regex": fmt.Sprintf("^%s", m.districtID)}},
-			},
-			"$and": []bson.M{emptyWriterQuery},
-		}
-	}
-
-	res := m.collection.FindOneAndUpdate(context.TODO(), readLockQuery, bson.M{
-		"$addToSet": bson.M{
-			"readers": m.clientID,
-		},
-	})
-	if res.Err() == nil {
+	if updateRes.MatchedCount > 0 || updateRes.UpsertedCount > 0 {
 		return nil
-	} else if res.Err() != mongo.ErrNoDocuments {
-		// This only works if the mgo.Session object has Safe mode enabled. Safe is the default but
-		// something for which we should maintain external documentation
-		return res.Err()
 	}
 
 	return ErrNotOwner
@@ -241,29 +221,45 @@ func (m *RWMutex) tryToGetReadLock(lock *mongoLock) error {
 
 // RUnlock releases the read lock
 func (m *RWMutex) RUnlock() error {
-	unlockQuery := bson.M{
-		"lockID":  m.lockID,
-		"readers": m.clientID,
-	}
-	if m.checkBothLockTypes {
-		unlockQuery = bson.M{
-			"$or": []bson.M{
-				{"lockID": m.lockID},
-				{"lockID": bson.M{"$regex": fmt.Sprintf("^%s", m.districtID)}},
+	deleteRes, err := m.collection.DeleteOne(
+		context.TODO(),
+		bson.M{
+			"lockID": m.lockID,
+			"$or":    emptyWriterQuery["$or"],
+			"readers": bson.M{
+				"$size": 1,
+				"$all":  []string{m.clientID},
 			},
-			"readers": m.clientID,
-		}
+		},
+	)
+	if err != nil {
+		return err
+	}
+	if deleteRes.DeletedCount > 0 {
+		return nil
 	}
 
-	res := m.collection.FindOneAndUpdate(context.TODO(), unlockQuery, bson.M{
-		"$pull": bson.M{
+	updateRes, err := m.collection.UpdateOne(
+		context.TODO(),
+		bson.M{
+			"lockID":  m.lockID,
 			"readers": m.clientID,
 		},
-	})
-	if res.Err() == mongo.ErrNoDocuments {
-		return ErrNotOwner
+		bson.M{
+			"$pull": bson.M{
+				"readers": m.clientID,
+			},
+		},
+	)
+	if err != nil {
+		return err
 	}
-	return res.Err()
+	if updateRes.MatchedCount <= 0 {
+		return ErrNotOwner
+
+	}
+
+	return nil
 }
 
 // findOrCreateLock will attempt to see if an existing lock ID exists
@@ -272,12 +268,6 @@ func (m *RWMutex) findOrCreateLock() (*mongoLock, error) {
 	var lock mongoLock
 
 	lockIDQuery := bson.M{"lockID": m.lockID}
-	if m.checkBothLockTypes {
-		lockIDQuery = bson.M{"$or": []bson.M{
-			{"lockID": m.lockID},
-			{"lockID": bson.M{"$regex": fmt.Sprintf("^%s", m.districtID)}},
-		}}
-	}
 
 	var foundLock mongoLock
 	err := m.collection.FindOne(context.TODO(), lockIDQuery).Decode(&foundLock)
@@ -300,22 +290,6 @@ func (m *RWMutex) findOrCreateLock() (*mongoLock, error) {
 			return nil, err
 		}
 		return &lock, nil
-	}
-	if foundLock.LockID != m.lockID &&
-		foundLock.LockID == m.districtID &&
-		strings.HasPrefix(m.lockID, m.districtID) {
-		_, err = m.collection.UpdateOne(
-			context.TODO(),
-			bson.M{"lockID": foundLock.LockID},
-			bson.M{
-				"$set": bson.M{
-					"lockID": m.lockID,
-				},
-			},
-		)
-		if err != nil {
-			return nil, err
-		}
 	}
 
 	return &foundLock, nil
