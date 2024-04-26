@@ -109,6 +109,13 @@ func TestRLockMultipleReaders(t *testing.T) {
 		LockID:  lockID,
 		Readers: []string{"client_2", clientID},
 	}, mLock)
+
+	require.NoError(t, firstLock.RLock())
+	c.FindOne(t, bson.M{"lockID": lockID}, options.FindOne(), &mLock)
+	assert.Equal(t, mongoLock{
+		LockID:  lockID,
+		Readers: []string{"client_2", clientID},
+	}, mLock)
 }
 
 // TestRLockReenter checks that RWMutex.lock reenters a write lock with the same client id
