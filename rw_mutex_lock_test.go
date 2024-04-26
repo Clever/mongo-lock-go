@@ -15,7 +15,8 @@ import (
 const (
 	clientID       = "clientID"
 	clientID2      = "clientID-2"
-	lockID         = "this be a lock id"
+	lockID         = "districtID:this be a lock id"
+	districtID     = "districtID"
 	testMongoURL   = "mongodb://127.0.0.1"
 	testDatabase   = "test"
 	testCollection = "testLocks"
@@ -26,8 +27,16 @@ type TestCollection struct {
 }
 
 func (tc *TestCollection) InsertWithLockID(t *testing.T, lockID string) {
-	mutex := NewRWMutex(tc.collection, lockID, "doesntmatter")
-	_, err := mutex.findOrCreateLock()
+	_, err := tc.collection.InsertOne(context.TODO(), mongoLock{
+		LockID:  lockID,
+		Writer:  "",
+		Readers: []string{},
+	})
+	require.NoError(t, err)
+	var lock mongoLock
+	err = tc.collection.FindOne(context.TODO(), bson.M{
+		"lockID": lockID,
+	}).Decode(&lock)
 	require.NoError(t, err)
 }
 

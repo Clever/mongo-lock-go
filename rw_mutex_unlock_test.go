@@ -1,11 +1,13 @@
 package lock
 
 import (
+	"context"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
@@ -30,6 +32,12 @@ func TestRUnlockSuccess(t *testing.T) {
 		Readers: []string{"client_2"},
 		Writer:  "",
 	}, mLock)
+
+	require.NoError(t, secondLock.RUnlock())
+	emptyResult := c.collection.FindOne(context.TODO(), bson.M{
+		"lockID": lockID,
+	}, options.FindOne())
+	assert.Error(t, mongo.ErrNoDocuments, emptyResult.Err())
 }
 
 // TestRUnlockNotHeld - RWMutex.RUnlock returns an error if the client did not hold the lock
