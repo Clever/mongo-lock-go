@@ -8,7 +8,7 @@ EXECUTABLE := mongo-lock-go
 
 .PHONY: test $(PKGS) run clean vendor
 
-$(eval $(call golang-version-check,1.16))
+$(eval $(call golang-version-check,1.24))
 
 test: $(PKGS)
 
