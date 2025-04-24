@@ -3,7 +3,7 @@ jobs:
   build:
     working_directory: ~/go/src/github.com/Clever/mongo-lock-go
     docker:
-    - image: cimg/go:1.21
+    - image: cimg/go:1.24
     - image: mongo:6.0
     environment:
       GOPRIVATE: github.com/Clever/*
