@@ -7,9 +7,9 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.mongodb.org/mongo-driver/bson"
-	"go.mongodb.org/mongo-driver/mongo"
-	"go.mongodb.org/mongo-driver/mongo/options"
+	"go.mongodb.org/mongo-driver/v2/bson"
+	"go.mongodb.org/mongo-driver/v2/mongo"
+	"go.mongodb.org/mongo-driver/v2/mongo/options"
 )
 
 const (
@@ -40,14 +40,16 @@ func (tc *TestCollection) InsertWithLockID(t *testing.T, lockID string) {
 	require.NoError(t, err)
 }
 
-func (tc *TestCollection) FindOne(t *testing.T, filter interface{}, opts *options.FindOneOptions, result interface{}) {
+func (tc *TestCollection) FindOne(t *testing.T, filter interface{}, opts *options.FindOneOptionsBuilder, result interface{}) {
 	res := tc.collection.FindOne(context.TODO(), filter, opts)
 	require.NoError(t, res.Err())
 	require.NoError(t, res.Decode(result))
 }
 
 func setupRWMutexTest(t *testing.T) *TestCollection {
-	client, err := mongo.Connect(context.TODO(), options.Client().ApplyURI(testMongoURL))
+	client, err := mongo.Connect(options.Client().ApplyURI(testMongoURL).SetBSONOptions(&options.BSONOptions{
+		DefaultDocumentM: true,
+	}))
 	require.NoError(t, err)
 	require.NoError(t, client.Database(testDatabase).Drop(context.TODO()))
 	require.NoError(t, client.Database(testDatabase).CreateCollection(context.TODO(), "test"))

@@ -6,9 +6,9 @@ import (
 	"math/rand"
 	"time"
 
-	"go.mongodb.org/mongo-driver/bson"
-	"go.mongodb.org/mongo-driver/mongo"
-	"go.mongodb.org/mongo-driver/mongo/options"
+	"go.mongodb.org/mongo-driver/v2/bson"
+	"go.mongodb.org/mongo-driver/v2/mongo"
+	"go.mongodb.org/mongo-driver/v2/mongo/options"
 )
 
 var (
@@ -106,7 +106,7 @@ func (m *RWMutex) TryLock() error {
 				"readers": []string{},
 			},
 		},
-		options.Update().SetUpsert(true))
+		options.UpdateOne().SetUpsert(true))
 	if err != nil {
 		if mongo.IsDuplicateKeyError(err) {
 			return ErrNotOwner
@@ -183,7 +183,7 @@ func (m *RWMutex) TryRLock() error {
 				"readers": m.clientID,
 			},
 		},
-		options.Update().SetUpsert(true))
+		options.UpdateOne().SetUpsert(true))
 	if err != nil {
 		if mongo.IsDuplicateKeyError(err) {
 			return ErrNotOwner
